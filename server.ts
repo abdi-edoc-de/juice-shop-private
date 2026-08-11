@@ -162,6 +162,7 @@ const collectDurationPromise = (name: string, func: (...args: any) => Promise<an
 
 /* Sets view engine to hbs */
 app.set('view engine', 'hbs')
+app.set('jsonp callback name', false) // Disable JSONP support to prevent cross-origin data exfiltration
 
 void collectDurationPromise('validatePreconditions', validatePreconditions)()
 void collectDurationPromise('cleanupFtpFolder', cleanupFtpFolder)()
@@ -178,9 +179,21 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Compression for all requests */
   app.use(compression())
 
-  /* Bludgeon solution for possible CORS problems: Allow everything! */
-  app.options('*', cors())
-  app.use(cors())
+  /* CORS configuration with origin validation */
+  const allowedOrigins = [config.get<string>('server.baseUrl')]
+  const corsOptions: cors.CorsOptions = {
+    origin (origin, callback) {
+      // Allow requests with no origin (e.g., same-origin, mobile apps, curl)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true)
+      } else {
+        callback(new Error('Blocked by CORS policy'))
+      }
+    },
+    credentials: true
+  }
+  app.options('*', cors(corsOptions))
+  app.use(cors(corsOptions))
 
   /* Security middleware */
   app.use(helmet.noSniff())
