@@ -20,10 +20,10 @@ before(async () => {
 }, { timeout: 60000 })
 
 void describe('/rest/memories', () => {
-  void it('GET memories via public API', async () => {
+  void it('GET memories is forbidden via public API without authorization', async () => {
     const res = await request(app)
       .get('/rest/memories')
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
   })
 
   void it('GET memories via a valid authorization token', async () => {
@@ -35,6 +35,29 @@ void describe('/rest/memories', () => {
       .get('/rest/memories')
       .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
     assert.equal(res.status, 200)
+  })
+
+  void it('GET memories does not expose sensitive user attributes', async () => {
+    const { token } = await login(app, {
+      email: 'jim@' + config.get<string>('application.domain'),
+      password: 'ncc-1701'
+    })
+    const res = await request(app)
+      .get('/rest/memories')
+      .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
+    assert.equal(res.status, 200)
+    if (res.body.data && res.body.data.length > 0) {
+      for (const memory of res.body.data) {
+        if (memory.User) {
+          assert.equal(memory.User.password, undefined, 'password should not be exposed')
+          assert.equal(memory.User.totpSecret, undefined, 'totpSecret should not be exposed')
+          assert.equal(memory.User.deluxeToken, undefined, 'deluxeToken should not be exposed')
+          assert.equal(memory.User.role, undefined, 'role should not be exposed')
+          assert.equal(memory.User.lastLoginIp, undefined, 'lastLoginIp should not be exposed')
+          assert.equal(memory.User.isActive, undefined, 'isActive should not be exposed')
+        }
+      }
+    }
   })
 
   void it('POST new memory is forbidden via public API', async () => {

@@ -646,7 +646,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.put('/rest/wallet/balance', security.appendUserId(), utils.asyncHandler(addWalletBalance()))
   app.get('/rest/deluxe-membership', deluxeMembershipStatus())
   app.post('/rest/deluxe-membership', security.appendUserId(), utils.asyncHandler(upgradeToDeluxe()))
-  app.get('/rest/memories', utils.asyncHandler(getMemories()))
+  app.get('/rest/memories', security.isAuthorized(), utils.asyncHandler(getMemories()))
   /* NoSQL API endpoints */
   app.get('/rest/products/:id/reviews', showProductReviews())
   app.put('/rest/products/:id/reviews', utils.asyncHandler(createProductReviews()))
