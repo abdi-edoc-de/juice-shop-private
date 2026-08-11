@@ -619,6 +619,7 @@
   "Wrong answer to CAPTCHA. Please try again.": "Wrong answer to CAPTCHA. Please try again.",
   "Invalid email or password.": "Invalid email or password.",
   "Current password is not correct.": "Current password is not correct.",
+  "Current password is required.": "Current password is required.",
   "Password cannot be empty.": "Password cannot be empty.",
   "New and repeated password do not match.": "New and repeated password do not match.",
   "Wrong answer to security question.": "Wrong answer to security question.",
