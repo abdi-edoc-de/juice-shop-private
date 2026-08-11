@@ -51,12 +51,23 @@ void describe('/rest/products/:id/reviews', () => {
   void it('PUT single product review can be created', async () => {
     const res = await request(app)
       .put('/rest/products/1/reviews')
+      .set(authHeader)
       .send({
         message: 'Lorem Ipsum',
         author: 'Anonymous'
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
+  })
+
+  void it('PUT product review creation requires authentication', async () => {
+    const res = await request(app)
+      .put('/rest/products/1/reviews')
+      .send({
+        message: 'Lorem Ipsum',
+        author: 'Anonymous'
+      })
+    assert.equal(res.status, 401)
   })
 })
 
