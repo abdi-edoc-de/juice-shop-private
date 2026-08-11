@@ -189,10 +189,18 @@ void describe('insecurity', () => {
   })
 
   void describe('hash', () => {
-    void it('returns MD5 hash for any input string', () => {
-      assert.equal(security.hash('admin123'), '0192023a7bbd73250516f069df18b500')
-      assert.equal(security.hash('password'), '5f4dcc3b5aa765d61d8327deb882cf99')
-      assert.equal(security.hash(''), 'd41d8cd98f00b204e9800998ecf8427e')
+    void it('returns PBKDF2-SHA256 hash for any input string', () => {
+      assert.equal(security.hash('admin123'), '3287ac012af573d7a29adcde3e28f64ba44acfca486b7ef8745fb9a6a6d054602f92a29b5be9173557818d09dabba972e7fbf042876bb119d8d608a69d2593a0')
+      assert.equal(security.hash('password'), 'd9d8dec8154fa931656e499de7434e3baf2b35d846ed6a76fb7f3719f171772d1d3928be0fe27b299b960165e4069133778fa133f64bb01fb0bef0deaf383dc5')
+      assert.equal(security.hash(''), '36c3610489201b63e05f031dcc2ad21c6fc20c2a0aa8c4fcda5b9402e22911d88a063948bec42456552b2c367d28e909bcc77cd815fd231ed4c7e085b80c873a')
+    })
+
+    void it('produces deterministic output for same input', () => {
+      assert.equal(security.hash('test'), security.hash('test'))
+    })
+
+    void it('produces different output for different inputs', () => {
+      assert.notEqual(security.hash('admin123'), security.hash('password'))
     })
   })
 
@@ -278,6 +286,19 @@ void describe('insecurity', () => {
       const user = { data: { id: 2 } } as any
       security.authenticatedUsers.updateFrom({ headers: { authorization: `Bearer ${token}` } } as Request, user)
       assert.deepEqual(security.authenticatedUsers.get(token), user)
+    })
+  })
+
+  void describe('authorize', () => {
+    void it('does not include password field in JWT payload', () => {
+      const user = { data: { id: 1, email: 'test@test.com', password: 'somehash', role: 'customer' } }
+      const token = security.authorize(user)
+      const decoded = security.decode(token)
+      const payload = typeof decoded === 'string' ? JSON.parse(decoded) : decoded
+      assert.equal(payload.data.password, undefined)
+      assert.equal(payload.password, undefined)
+      assert.equal(payload.data.email, 'test@test.com')
+      assert.equal(payload.data.role, 'customer')
     })
   })
 

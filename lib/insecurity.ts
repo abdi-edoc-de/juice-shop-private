@@ -38,7 +38,12 @@ interface IAuthenticatedUsers {
   updateFrom: (req: Request, user: ResponseWithUser) => any
 }
 
-export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
+const HASH_ITERATIONS = 100000
+const HASH_KEYLEN = 64
+const HASH_DIGEST = 'sha256'
+const HASH_SALT = 'pVGJkHz3m4x8kWpYRnR2jBhugZbXqnmQ'
+
+export const hash = (data: string) => crypto.pbkdf2Sync(data, HASH_SALT, HASH_ITERATIONS, HASH_KEYLEN, HASH_DIGEST).toString('hex')
 export const hmac = (data: string) => crypto.createHmac('sha256', 'pa4qacea4VK9t9nGv7yZtwmj').update(data).digest('hex')
 
 export const cutOffPoisonNullByte = (str: string) => {
@@ -51,9 +56,30 @@ export const cutOffPoisonNullByte = (str: string) => {
 
 export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
+export const authorize = (user: any = {}) => {
+  const payload = sanitizePayloadForJwt(user)
+  return jwt.sign(payload, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
+}
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
+
+/**
+ * Remove sensitive fields (like password hash) from user payload before signing JWT.
+ */
+function sanitizePayloadForJwt (payload: any): any {
+  if (!payload || typeof payload !== 'object') {
+    return payload
+  }
+  const sanitized = { ...payload }
+  // Remove password from top-level
+  delete sanitized.password
+  // Remove password from nested data object (user data)
+  if (sanitized.data && typeof sanitized.data === 'object') {
+    sanitized.data = { ...sanitized.data }
+    delete sanitized.data.password
+  }
+  return sanitized
+}
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
 export const sanitizeLegacy = (input = '') => input.replace(/<(?:\w+)\W+?[\w]/gi, '')
