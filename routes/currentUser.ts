@@ -8,6 +8,9 @@ import { type Request, type Response } from 'express'
 import { challenges } from '../data/datacache'
 import * as security from '../lib/insecurity'
 
+// Whitelist of fields that are safe to expose via the fields parameter
+const ALLOWED_FIELDS = new Set(['id', 'email', 'lastLoginIp', 'profileImage', 'username', 'role', 'isActive'])
+
 export function retrieveLoggedInUser () {
   return (req: Request, res: Response) => {
     let user
@@ -25,9 +28,9 @@ export function retrieveLoggedInUser () {
         let baseUser: any = {}
 
         if (requestedFields.length > 0) {
-          // When fields are specified, return only those fields
+          // When fields are specified, return only those fields that are in the whitelist
           for (const field of requestedFields) {
-            if (user?.data[field as keyof typeof user.data] !== undefined) {
+            if (ALLOWED_FIELDS.has(field) && user?.data[field as keyof typeof user.data] !== undefined) {
               baseUser[field] = user?.data[field as keyof typeof user.data]
             }
           }
@@ -51,11 +54,11 @@ export function retrieveLoggedInUser () {
     // Solve passwordHashLeakChallenge when password field is included in response
     challengeUtils.solveIf(challenges.passwordHashLeakChallenge, () => response?.user?.password)
 
-    if (req.query.callback === undefined) {
-      res.json(response)
-    } else {
+    // Disable JSONP support to prevent cross-origin data exfiltration.
+    // Always return JSON regardless of callback parameter.
+    if (req.query.callback !== undefined) {
       challengeUtils.solveIf(challenges.emailLeakChallenge, () => { return true })
-      res.jsonp(response)
     }
+    res.json(response)
   }
 }
