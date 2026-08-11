@@ -195,3 +195,17 @@ export const updateAuthenticatedUsers = () => (req: Request, res: Response, next
   }
   next()
 }
+
+export const sanitizeFeedbackUserId = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const user = authenticatedUsers.from(req)
+    if (user?.data?.id) {
+      // Authenticated user: force UserId to match the authenticated user's ID
+      req.body.UserId = user.data.id
+    } else {
+      // Unauthenticated user: do not allow attributing feedback to any user
+      delete req.body.UserId
+    }
+    next()
+  }
+}
