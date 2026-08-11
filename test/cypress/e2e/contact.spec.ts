@@ -153,8 +153,10 @@ describe('/#/contact', () => {
 
         async function sendPostRequest (captcha: {
           captchaId: number
-          answer: string
+          captcha: string
         }) {
+          // eslint-disable-next-line no-eval
+          const answer = eval(captcha.captcha).toString()
           const response = await fetch(
             `${Cypress.config('baseUrl')}/api/Feedbacks`,
             {
@@ -165,7 +167,7 @@ describe('/#/contact', () => {
               },
               body: JSON.stringify({
                 captchaId: captcha.captchaId,
-                captcha: `${captcha.answer}`,
+                captcha: answer,
                 comment: 'Comment',
                 rating: 0
               })
@@ -201,8 +203,10 @@ describe('/#/contact', () => {
 
           async function sendPostRequest (captcha: {
             captchaId: number
-            answer: string
+            captcha: string
           }) {
+            // eslint-disable-next-line no-eval
+            const answer = eval(captcha.captcha).toString()
             await fetch(`${Cypress.config('baseUrl')}/api/Feedbacks`, {
               method: 'POST',
               cache: 'no-cache',
@@ -211,7 +215,7 @@ describe('/#/contact', () => {
               },
               body: JSON.stringify({
                 captchaId: captcha.captchaId,
-                captcha: `${captcha.answer}`,
+                captcha: answer,
                 comment: `Spam #${i}`,
                 rating: 3
               })
