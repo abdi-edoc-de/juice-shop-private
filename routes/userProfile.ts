@@ -21,6 +21,15 @@ function favicon () {
   return utils.extractFilename(config.get('application.favicon'))
 }
 
+/**
+ * Sanitizes a profile image value for safe inclusion in a Content-Security-Policy header.
+ * Removes characters that could be used to inject additional CSP directives (semicolons,
+ * single quotes, and newlines/carriage returns).
+ */
+function sanitizeForCsp (value: string): string {
+  return value.replace(/[;\n\r']/g, '')
+}
+
 export function getUserProfile () {
   return async (req: Request, res: Response, next: NextFunction) => {
     let template: string
@@ -88,7 +97,8 @@ export function getUserProfile () {
     try {
       const pug = (await import('pug')).default
       const fn = pug.compile(template)
-      const CSP = `img-src 'self' ${user?.profileImage}; script-src 'self' 'unsafe-eval'`
+      const sanitizedProfileImage = sanitizeForCsp(user?.profileImage || '')
+      const CSP = `img-src 'self' ${sanitizedProfileImage}; script-src 'self' 'unsafe-eval'`
 
       challengeUtils.solveIf(challenges.usernameXssChallenge, () => {
         return username && user?.profileImage.match(/;[ ]*script-src(.)*'unsafe-inline'/g) !== null && username.includes('<script>alert(`xss`)</script>')
