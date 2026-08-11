@@ -23,28 +23,28 @@ export function servePublicFiles () {
   }
 
   function verify (file: string, res: Response, next: NextFunction) {
-    if (file && (endsWithAllowlistedFileType(file) || (file === 'incident-support.kdbx'))) {
-      file = security.cutOffPoisonNullByte(file)
+    const sanitizedFile = security.cutOffPoisonNullByte(file)
 
-      challengeUtils.solveIf(challenges.directoryListingChallenge, () => { return file.toLowerCase() === 'acquisitions.md' })
-      verifySuccessfulPoisonNullByteExploit(file)
+    if (sanitizedFile && (endsWithAllowlistedFileType(sanitizedFile) || (sanitizedFile === 'incident-support.kdbx'))) {
+      challengeUtils.solveIf(challenges.directoryListingChallenge, () => { return sanitizedFile.toLowerCase() === 'acquisitions.md' })
+      verifySuccessfulPoisonNullByteExploit(file, sanitizedFile)
 
-      res.sendFile(path.resolve('ftp/', file))
+      res.sendFile(path.resolve('ftp/', sanitizedFile))
     } else {
       res.status(403)
       next(new Error('Only .md and .pdf files are allowed!'))
     }
   }
 
-  function verifySuccessfulPoisonNullByteExploit (file: string) {
-    challengeUtils.solveIf(challenges.easterEggLevelOneChallenge, () => { return file.toLowerCase() === 'eastere.gg' })
-    challengeUtils.solveIf(challenges.forgottenDevBackupChallenge, () => { return file.toLowerCase() === 'package.json.bak' })
-    challengeUtils.solveIf(challenges.forgottenBackupChallenge, () => { return file.toLowerCase() === 'coupons_2013.md.bak' })
-    challengeUtils.solveIf(challenges.misplacedSignatureFileChallenge, () => { return file.toLowerCase() === 'suspicious_errors.yml' })
+  function verifySuccessfulPoisonNullByteExploit (originalFile: string, sanitizedFile: string) {
+    challengeUtils.solveIf(challenges.easterEggLevelOneChallenge, () => { return sanitizedFile.toLowerCase() === 'eastere.gg' })
+    challengeUtils.solveIf(challenges.forgottenDevBackupChallenge, () => { return sanitizedFile.toLowerCase() === 'package.json.bak' })
+    challengeUtils.solveIf(challenges.forgottenBackupChallenge, () => { return sanitizedFile.toLowerCase() === 'coupons_2013.md.bak' })
+    challengeUtils.solveIf(challenges.misplacedSignatureFileChallenge, () => { return sanitizedFile.toLowerCase() === 'suspicious_errors.yml' })
 
     challengeUtils.solveIf(challenges.nullByteChallenge, () => {
       return challenges.easterEggLevelOneChallenge.solved || challenges.forgottenDevBackupChallenge.solved || challenges.forgottenBackupChallenge.solved ||
-        challenges.misplacedSignatureFileChallenge.solved || file.toLowerCase() === 'encrypt.pyc'
+        challenges.misplacedSignatureFileChallenge.solved || sanitizedFile.toLowerCase() === 'encrypt.pyc'
     })
   }
 
