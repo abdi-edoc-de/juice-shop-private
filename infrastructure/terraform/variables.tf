@@ -69,3 +69,9 @@ variable "efs_encrypted" {
   type        = bool
   default     = true
 }
+
+variable "tls_private_key" {
+  description = "TLS private key for the server certificate. Must be provided via environment variable or tfvars file - never hardcode."
+  type        = string
+  sensitive   = true
+}
