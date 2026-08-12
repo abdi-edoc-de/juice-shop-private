@@ -21,6 +21,15 @@ export function upgradeToDeluxe () {
         res.status(400).json({ status: 'error', error: 'Something went wrong. Please try again!' })
         return
       }
+
+      if (req.body.paymentMode !== 'wallet' && req.body.paymentMode !== 'card') {
+        challengeUtils.solveIf(challenges.freeDeluxeChallenge, () => {
+          return security.verify(utils.jwtFrom(req)) && req.body.paymentMode !== 'wallet' && req.body.paymentMode !== 'card'
+        })
+        res.status(400).json({ status: 'error', error: 'Invalid payment mode. Please provide a valid payment method.' })
+        return
+      }
+
       if (req.body.paymentMode === 'wallet') {
         const wallet = await WalletModel.findOne({ where: { UserId: req.body.UserId } })
         if ((wallet != null) && wallet.balance < 49) {
@@ -41,9 +50,6 @@ export function upgradeToDeluxe () {
 
       try {
         const updatedUser = await user.update({ role: security.roles.deluxe, deluxeToken: security.deluxeToken(user.email) })
-        challengeUtils.solveIf(challenges.freeDeluxeChallenge, () => {
-          return security.verify(utils.jwtFrom(req)) && req.body.paymentMode !== 'wallet' && req.body.paymentMode !== 'card'
-        })
         const userWithStatus = utils.queryResultToJson(updatedUser)
         const updatedToken = security.authorize(userWithStatus)
         security.authenticatedUsers.put(updatedToken, userWithStatus)
