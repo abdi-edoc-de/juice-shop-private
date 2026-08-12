@@ -4,6 +4,7 @@
  */
 
 import fs from 'node:fs'
+import path from 'node:path'
 import { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import { type Request, type Response, type NextFunction } from 'express'
@@ -26,10 +27,21 @@ export function profileImageUrlUpload () {
             throw new Error('url returned a non-OK status code or an empty body')
           }
           const ext = ['jpg', 'jpeg', 'png', 'svg', 'gif'].includes(url.split('.').slice(-1)[0].toLowerCase()) ? url.split('.').slice(-1)[0].toLowerCase() : 'jpg'
-          const fileStream = fs.createWriteStream(`frontend/dist/frontend/assets/public/images/uploads/${loggedInUser.data.id}.${ext}`, { flags: 'w' })
+
+          // Sanitize user ID to prevent path traversal
+          const visibleUploadsDir = path.resolve('frontend/dist/frontend/assets/public/images/uploads')
+          const sanitizedId = String(loggedInUser.data.id).replace(/[/\\]/g, '_')
+          const targetPath = path.resolve(visibleUploadsDir, `${sanitizedId}.${ext}`)
+
+          // Verify the resolved path is still within the uploads directory
+          if (!targetPath.startsWith(visibleUploadsDir + path.sep) && targetPath !== visibleUploadsDir) {
+            throw new Error('Blocked illegal path traversal attempt')
+          }
+
+          const fileStream = fs.createWriteStream(targetPath, { flags: 'w' })
           await finished(Readable.fromWeb(response.body as any).pipe(fileStream))
           const user = await UserModel.findByPk(loggedInUser.data.id)
-          await user?.update({ profileImage: `/assets/public/images/uploads/${loggedInUser.data.id}.${ext}` })
+          await user?.update({ profileImage: `/assets/public/images/uploads/${sanitizedId}.${ext}` })
         } catch (error) {
           try {
             const user = await UserModel.findByPk(loggedInUser.data.id)
