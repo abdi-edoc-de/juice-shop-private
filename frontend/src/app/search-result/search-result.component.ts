@@ -66,7 +66,7 @@ export class SearchResultComponent implements OnDestroy, AfterViewInit {
       next: ([quantities, products]) => {
         const dataTable: ProductTableEntry[] = []
         this.tableData = products
-        this.trustProductDescription(products) // vuln-code-snippet neutral-line restfulXssChallenge
+        // Product descriptions are sanitized by Angular's built-in sanitizer via [innerHTML] binding // vuln-code-snippet neutral-line restfulXssChallenge
         for (const product of products) {
           dataTable.push({
             name: product.name,
@@ -108,7 +108,7 @@ export class SearchResultComponent implements OnDestroy, AfterViewInit {
 
   trustProductDescription (tableData: any[]) { // vuln-code-snippet neutral-line restfulXssChallenge
     for (let i = 0; i < tableData.length; i++) { // vuln-code-snippet neutral-line restfulXssChallenge
-      tableData[i].description = this.sanitizer.bypassSecurityTrustHtml(tableData[i].description) // vuln-code-snippet vuln-line restfulXssChallenge
+      // Description is kept as-is; Angular's built-in sanitizer handles it safely when bound via [innerHTML] // vuln-code-snippet vuln-line restfulXssChallenge
     } // vuln-code-snippet neutral-line restfulXssChallenge
   } // vuln-code-snippet neutral-line restfulXssChallenge
 
