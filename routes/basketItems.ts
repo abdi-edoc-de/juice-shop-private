@@ -68,14 +68,37 @@ export function quantityCheckBeforeBasketItemUpdate () {
       const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
       const user = security.authenticatedUsers.from(req)
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && req.body.BasketId && user.bid != req.body.BasketId }) // eslint-disable-line eqeqeq
+      if (item == null) {
+        throw new Error('No such item found!')
+      }
+      if (user && Number(item.BasketId) !== Number(user.bid)) {
+        res.status(403).json({ error: 'Invalid basket item.' })
+        return
+      }
       if (req.body.quantity) {
-        if (item == null) {
-          throw new Error('No such item found!')
-        }
         void quantityCheck(req, res, next, item.ProductId, req.body.quantity)
       } else {
         next()
       }
+    } catch (error) {
+      next(error)
+    }
+  }
+}
+
+export function basketItemOwnershipCheck () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
+      if (item == null) {
+        throw new Error('No such item found!')
+      }
+      const user = security.authenticatedUsers.from(req)
+      if (user && Number(item.BasketId) !== Number(user.bid)) {
+        res.status(403).json({ error: 'Invalid basket item.' })
+        return
+      }
+      next()
     } catch (error) {
       next(error)
     }
