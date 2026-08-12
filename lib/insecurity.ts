@@ -59,9 +59,12 @@ export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
 export const sanitizeLegacy = (input = '') => input.replace(/<(?:\w+)\W+?[\w]/gi, '')
 export const sanitizeFilename = (filename: string) => sanitizeFilenameLib(filename)
 export const sanitizeSecure = (html: string): string => {
-  const sanitized = sanitizeHtml(html)
-  if (sanitized === html) {
-    return html
+  // Strip ASCII control characters (0x00-0x1F) to prevent bypasses using tab/null/etc.
+  // characters that browsers normalize away when resolving URLs (e.g., ja\tvascript: -> javascript:)
+  const stripped = html.replace(/[\x00-\x1F]/g, '')
+  const sanitized = sanitizeHtml(stripped)
+  if (sanitized === stripped) {
+    return stripped
   } else {
     return sanitizeSecure(sanitized)
   }
