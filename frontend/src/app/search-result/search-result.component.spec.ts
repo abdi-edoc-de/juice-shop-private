@@ -215,10 +215,10 @@ describe('SearchResultComponent', () => {
         expect(component.dataSource.filter).toEqual('product search')
     })
 
-    it('should pass the search query as trusted HTML', () => {
+    it('should assign the search query as plain text without bypassing sanitizer', () => {
         activatedRoute.setQueryParameter('<script>scripttag</script>')
         component.filterTable()
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<script>scripttag</script>')
+        expect(component.searchValue).toBe('<script>scripttag</script>')
     })
 
     describe('template rendering', () => {
@@ -258,6 +258,17 @@ describe('SearchResultComponent', () => {
 
         it('should always render the paginator at the bottom of the result page', () => {
             expect((fixture.nativeElement as HTMLElement).querySelector('mat-paginator')).toBeTruthy()
+        })
+
+        it('should render HTML markup as escaped text, not as DOM elements', () => {
+            component.searchValue = '<img src=x onerror=alert(1)>'
+            fixture.detectChanges()
+            const searchValueEl = (fixture.nativeElement as HTMLElement).querySelector('#searchValue')
+            expect(searchValueEl).toBeTruthy()
+            // The text content should contain the literal HTML string
+            expect(searchValueEl!.textContent).toContain('<img src=x onerror=alert(1)>')
+            // No actual img element should be created
+            expect(searchValueEl!.querySelector('img')).toBeNull()
         })
     })
 
