@@ -49,10 +49,18 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
+export const isAuthorized = () => expressJwt(({ secret: publicKey, algorithms: ['RS256'] }) as any)
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+export const verify = (token: string) => {
+  if (!token) return false
+  // Reject tokens with 'none' algorithm or non-RS256 algorithms to prevent JWT algorithm bypass attacks
+  const decoded = jws.decode(token)
+  if (!decoded || !decoded.header || decoded.header.alg !== 'RS256') {
+    return false
+  }
+  return (jws.verify as ((token: string, algorithm: string, secret: string) => boolean))(token, 'RS256', publicKey)
+}
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -186,7 +194,13 @@ export const appendUserId = () => {
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
-    jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
+    // Fix: Reject tokens with 'none' algorithm or non-RS256 algorithms before verification
+    const decoded = jws.decode(token)
+    if (!decoded || !decoded.header || decoded.header.alg !== 'RS256') {
+      next()
+      return
+    }
+    jwt.verify(token, publicKey, { algorithms: ['RS256'] } as any, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
         res.cookie('token', token)
