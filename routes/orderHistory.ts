@@ -10,7 +10,14 @@ import * as security from '../lib/insecurity'
 
 export function orderHistory () {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const loggedInUser = security.authenticatedUsers.get(req.headers?.authorization?.replace('Bearer ', ''))
+    const token = req.headers?.authorization?.replace('Bearer ', '')
+    // Defense-in-depth: verify the token signature before trusting the cached user data.
+    // This prevents forged alg:none tokens from being used to access order history.
+    if (!token || !security.verify(token)) {
+      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+      return
+    }
+    const loggedInUser = security.authenticatedUsers.get(token)
     if (loggedInUser?.data?.email && loggedInUser.data.id) {
       const email = loggedInUser.data.email
       const updatedEmail = email.replace(/[aeiou]/gi, '*')

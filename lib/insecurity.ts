@@ -186,12 +186,15 @@ export const appendUserId = () => {
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
-    jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
-      if (err === null && decoded?.data !== undefined) {
+    // Use jws.verify with public key to ensure the token has a valid RSA signature.
+    // This prevents alg:none JWT forgery attacks that bypass jwt.verify in jsonwebtoken v0.4.0.
+    if (verify(token)) {
+      const decoded = decode(token)
+      if (decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
         res.cookie('token', token)
       }
-    })
+    }
   }
   next()
 }
