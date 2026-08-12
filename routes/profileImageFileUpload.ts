@@ -11,6 +11,16 @@ import logger from '../lib/logger'
 import { UserModel } from '../models/user'
 import * as security from '../lib/insecurity'
 
+// Allowed image MIME types based on actual file content (magic bytes)
+const ALLOWED_IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'image/tiff'
+])
+
 export function profileImageFileUpload () {
   return async (req: Request, res: Response, next: NextFunction) => {
     const file = req.file
@@ -26,7 +36,7 @@ export function profileImageFileUpload () {
       next(new Error('Illegal file type'))
       return
     }
-    if (uploadedFileType === null || !uploadedFileType.mime.startsWith('image')) {
+    if (uploadedFileType === null || !ALLOWED_IMAGE_MIMES.has(uploadedFileType.mime)) {
       res.status(415)
       next(new Error(`Profile image upload does not accept this file type${uploadedFileType ? (': ' + uploadedFileType.mime) : '.'}`))
       return
