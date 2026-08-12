@@ -103,7 +103,9 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
       if (req.body.layout && utils.isChallengeEnabled(challenges.lfrChallenge)) {
         const filePath: string = path.resolve(req.body.layout).toLowerCase()
         const isForbiddenFile: boolean = (filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys'))
-        if (!isForbiddenFile) {
+        // Block path traversal to source code files containing sensitive secrets
+        const isSourceFile: boolean = (filePath.includes('/lib/') || filePath.includes('/build/lib/') || filePath.includes('insecurity') || filePath.includes('/routes/') || filePath.includes('/config/'))
+        if (!isForbiddenFile && !isSourceFile) {
           res.render('dataErasureResult', {
             ...req.body,
             ...themeVars
