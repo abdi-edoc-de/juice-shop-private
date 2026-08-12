@@ -39,10 +39,11 @@ export async function verify (req: Request, res: Response) {
 
     const [basket] = await BasketModel.findOrCreate({ where: { UserId: userId } })
 
-    const token = security.authorize(plainUser)
+    const sanitizedUser = security.sanitizeUserForToken(plainUser)
+    const token = security.authorize(sanitizedUser)
     // @ts-expect-error FIXME set new property for original basket
-    plainUser.bid = basket.id // keep track of original basket for challenge solution check
-    security.authenticatedUsers.put(token, plainUser)
+    sanitizedUser.bid = basket.id // keep track of original basket for challenge solution check
+    security.authenticatedUsers.put(token, sanitizedUser)
 
     res.json({ authentication: { token, bid: basket.id, umail: user.email } })
   } catch (error) {

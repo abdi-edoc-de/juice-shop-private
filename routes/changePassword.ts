@@ -49,6 +49,10 @@ export function changePassword () {
       }
 
       await user.update({ password: newPasswordInString })
+
+      // Invalidate the old token to prevent continued use after password change
+      security.authenticatedUsers.invalidateForUser(loggedInUser.data.id)
+
       challengeUtils.solveIf(
         challenges.changePasswordBenderChallenge,
         () => user.id === 3 && !currentPassword && user.password === security.hash('slurmCl4ssic')

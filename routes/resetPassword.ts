@@ -42,6 +42,8 @@ export function resetPassword () {
         const user = await UserModel.findByPk(data.UserId)
         if (user) {
           const updatedUser = await user.update({ password: newPassword })
+          // Invalidate any existing tokens for this user after password reset
+          security.authenticatedUsers.invalidateForUser(user.id)
           verifySecurityAnswerChallenges(updatedUser, answer)
           res.json({ user: updatedUser })
         }

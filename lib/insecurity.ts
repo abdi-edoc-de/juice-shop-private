@@ -36,6 +36,7 @@ interface IAuthenticatedUsers {
   tokenOf: (user: UserModel) => string | undefined
   from: (req: Request) => ResponseWithUser | undefined
   updateFrom: (req: Request, user: ResponseWithUser) => any
+  invalidateForUser: (userId: number | string) => void
 }
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
@@ -49,10 +50,24 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
+export const isAuthorized = () => expressJwt(({ secret: publicKey, algorithms: ['RS256'] }) as any)
+export const denyAll = () => expressJwt({ secret: '' + Math.random(), algorithms: ['RS256'] } as any)
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+
+export const verify = (token: string) => {
+  if (!token) return false
+  // Reject tokens with alg:none or any algorithm other than RS256
+  try {
+    const decoded = jws.decode(token)
+    if (!decoded || !decoded.header || decoded.header.alg !== 'RS256') {
+      return false
+    }
+  } catch {
+    return false
+  }
+  return (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey)
+}
+
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -65,6 +80,33 @@ export const sanitizeSecure = (html: string): string => {
   } else {
     return sanitizeSecure(sanitized)
   }
+}
+
+/** Sensitive fields that must never be included in JWT payloads */
+const JWT_SENSITIVE_FIELDS = ['password', 'totpSecret'] as const
+
+/**
+ * Strips sensitive fields from user data before including in JWT payload.
+ * This prevents exposure of password hashes, TOTP secrets, etc. in the token.
+ */
+export const sanitizeUserForToken = (userData: any): any => {
+  if (!userData || typeof userData !== 'object') return userData
+  const sanitized = { ...userData }
+  if (sanitized.data && typeof sanitized.data === 'object') {
+    sanitized.data = { ...sanitized.data }
+    for (const field of JWT_SENSITIVE_FIELDS) {
+      delete sanitized.data[field]
+    }
+    // Convert Sequelize model instances to plain objects
+    if (typeof sanitized.data.toJSON === 'function') {
+      const plain = sanitized.data.toJSON()
+      for (const field of JWT_SENSITIVE_FIELDS) {
+        delete plain[field]
+      }
+      sanitized.data = plain
+    }
+  }
+  return sanitized
 }
 
 export const authenticatedUsers: IAuthenticatedUsers = {
@@ -87,6 +129,13 @@ export const authenticatedUsers: IAuthenticatedUsers = {
   updateFrom: function (req: Request, user: ResponseWithUser) {
     const token = utils.jwtFrom(req)
     this.put(token, user)
+  },
+  invalidateForUser: function (userId: number | string) {
+    const token = this.idMap[userId]
+    if (token) {
+      delete this.tokenMap[token]
+      delete this.idMap[userId]
+    }
   }
 }
 
@@ -186,7 +235,18 @@ export const appendUserId = () => {
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
-    jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
+    // Reject tokens with alg:none or non-RS256 algorithms
+    try {
+      const decoded = jws.decode(token)
+      if (!decoded || !decoded.header || decoded.header.alg !== 'RS256') {
+        next()
+        return
+      }
+    } catch {
+      next()
+      return
+    }
+    jwt.verify(token, publicKey, { algorithms: ['RS256'] } as any, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
         res.cookie('token', token)
