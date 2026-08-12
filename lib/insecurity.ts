@@ -49,10 +49,33 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
+export const isAuthorized = () => {
+  const jwtMiddleware = expressJwt(({ secret: publicKey, algorithms: ['RS256'] }) as any)
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token) {
+      const decoded = jws.decode(token)
+      if (!decoded || !decoded.header || !decoded.header.alg || decoded.header.alg.toLowerCase() === 'none' || decoded.header.alg !== 'RS256') {
+        res.status(401).json({ error: 'Invalid token algorithm' })
+        return
+      }
+    }
+    jwtMiddleware(req, res, next)
+  }
+}
+export const denyAll = () => expressJwt({ secret: '' + Math.random(), algorithms: ['RS256'] } as any)
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+export const verify = (token: string) => {
+  if (!token) return false
+  const decoded = jws.decode(token)
+  if (!decoded || !decoded.header || decoded.header.alg === 'none' || decoded.header.alg === 'None' || decoded.header.alg === 'NONE' || !decoded.header.alg) {
+    return false
+  }
+  if (decoded.header.alg !== 'RS256') {
+    return false
+  }
+  return (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey)
+}
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -186,12 +209,15 @@ export const appendUserId = () => {
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
-    jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
-      if (err === null && decoded?.data !== undefined) {
-        authenticatedUsers.put(token, decoded)
-        res.cookie('token', token)
-      }
-    })
+    const decoded = jws.decode(token)
+    if (decoded && decoded.header && decoded.header.alg === 'RS256') {
+      jwt.verify(token, publicKey, { algorithms: ['RS256'] }, (err: Error | null, decoded: any) => {
+        if (err === null && decoded?.data !== undefined) {
+          authenticatedUsers.put(token, decoded)
+          res.cookie('token', token)
+        }
+      })
+    }
   }
   next()
 }

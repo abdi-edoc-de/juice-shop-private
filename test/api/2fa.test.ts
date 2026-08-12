@@ -10,13 +10,17 @@ import config from 'config'
 import jwt from 'jsonwebtoken'
 import { generateSync } from 'otplib'
 import type { Express } from 'express'
+import type { Sequelize } from 'sequelize'
 import * as security from '../../lib/insecurity'
 import { createTestApp } from './helpers/setup'
 import { login, register } from './helpers/auth'
+import { UserModel } from '../../models/user'
 
 const jsonHeader = { 'content-type': 'application/json' }
 
 let app: Express
+let sequelize: Sequelize
+let wurstbrotTotpSecret: string
 
 function getStatus (token: string) {
   return request(app)
@@ -30,6 +34,13 @@ function getStatus (token: string) {
 before(async () => {
   const result = await createTestApp()
   app = result.app
+  sequelize = result.sequelize
+
+  // Retrieve the dynamically generated TOTP secret for wurstbrot user from the database
+  const wurstbrotUser = await UserModel.findOne({ where: { email: `wurstbrot@${config.get<string>('application.domain')}` } })
+  if (wurstbrotUser) {
+    wurstbrotTotpSecret = wurstbrotUser.totpSecret
+  }
 }, { timeout: 60000 })
 
 void describe('/rest/2fa/verify', () => {
@@ -39,7 +50,7 @@ void describe('/rest/2fa/verify', () => {
       type: 'password_valid_needs_second_factor_token'
     })
 
-    const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
+    const totpToken = generateSync({ secret: wurstbrotTotpSecret })
 
     const res = await request(app)
       .post('/rest/2fa/verify')
@@ -82,7 +93,7 @@ void describe('/rest/2fa/verify', () => {
       type: 'password_valid_needs_second_factor_token'
     }, 'this_surly_isnt_the_right_key')
 
-    const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
+    const totpToken = generateSync({ secret: wurstbrotTotpSecret })
 
     const res = await request(app)
       .post('/rest/2fa/verify')
@@ -101,7 +112,7 @@ void describe('/rest/2fa/verify', () => {
       type: 'invalid_token_type'
     })
 
-    const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
+    const totpToken = generateSync({ secret: wurstbrotTotpSecret })
 
     const res = await request(app)
       .post('/rest/2fa/verify')
@@ -120,7 +131,7 @@ void describe('/rest/2fa/verify', () => {
       type: 'password_valid_needs_second_factor_token'
     })
 
-    const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
+    const totpToken = generateSync({ secret: wurstbrotTotpSecret })
 
     const res = await request(app)
       .post('/rest/2fa/verify')
@@ -139,7 +150,7 @@ void describe('/rest/2fa/status', () => {
     const { token } = await login(app, {
       email: `wurstbrot@${config.get<string>('application.domain')}`,
       password: 'EinBelegtesBrotMitSchinkenSCHINKEN!',
-      totpSecret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH'
+      totpSecret: wurstbrotTotpSecret
     })
 
     const res = await getStatus(token)
@@ -289,7 +300,7 @@ void describe('/rest/2fa/setup', () => {
   void it('POST should fail if the account has already set up 2fa', async () => {
     const email = `wurstbrot@${config.get<string>('application.domain')}`
     const password = 'EinBelegtesBrotMitSchinkenSCHINKEN!'
-    const totpSecret = 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH'
+    const totpSecret = wurstbrotTotpSecret
 
     const { token } = await login(app, { email, password, totpSecret })
 

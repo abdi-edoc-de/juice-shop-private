@@ -36,7 +36,12 @@ export function changePassword () {
       return
     }
 
-    if (currentPassword && security.hash(currentPassword) !== loggedInUser.data.password) {
+    if (!currentPassword) {
+      res.status(401).send(res.__('Current password is not correct.'))
+      return
+    }
+
+    if (security.hash(currentPassword) !== loggedInUser.data.password) {
       res.status(401).send(res.__('Current password is not correct.'))
       return
     }
@@ -53,7 +58,7 @@ export function changePassword () {
         challenges.changePasswordBenderChallenge,
         () => user.id === 3 && !currentPassword && user.password === security.hash('slurmCl4ssic')
       )
-      res.json({ user })
+      res.json({ user: { id: user.id, username: user.username, email: user.email } })
     } catch (error) {
       next(error)
     }
