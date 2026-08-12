@@ -34,7 +34,14 @@ export function addBasketItem () {
     }
 
     const user = security.authenticatedUsers.from(req)
-    if (user && basketIds[0] && basketIds[0] !== 'undefined' && Number(user.bid) != Number(basketIds[0])) { // eslint-disable-line eqeqeq
+
+    // Validate ALL BasketId values to prevent JSON key duplication bypass (IDOR).
+    // Every occurrence of BasketId in the request must match the authenticated user's basket.
+    const hasInvalidBasketId = basketIds.some((basketId) => {
+      return basketId && basketId !== 'undefined' && Number(user?.bid) !== Number(basketId)
+    })
+
+    if (user && hasInvalidBasketId) {
       res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
     } else {
       const basketItem = {
