@@ -103,11 +103,29 @@ void describe('/rest/memories', () => {
   })
 
   void it('Should not crash the node-js server when sending invalid content like described in CVE-2022-24434', async () => {
+    const { token } = await login(app, {
+      email: 'jim@' + config.get<string>('application.domain'),
+      password: 'ncc-1701'
+    })
     const res = await request(app)
       .post('/rest/memories')
+      .set('Authorization', 'Bearer ' + token)
       .set('Content-Type', 'multipart/form-data; boundary=----WebKitFormBoundaryoo6vortfDzBsDiro')
       .send('------WebKitFormBoundaryoo6vortfDzBsDiro\r\n Content-Disposition: form-data; name="bildbeschreibung"\r\n\r\n\r\n------WebKitFormBoundaryoo6vortfDzBsDiro--')
     assert.equal(res.status, 500)
     assert.ok(res.text.includes('Error: Malformed part header'))
+  })
+
+  void it('POST new memory image file exceeding the upload size limit is rejected', async () => {
+    const { token } = await login(app, {
+      email: 'jim@' + config.get<string>('application.domain'),
+      password: 'ncc-1701'
+    })
+    const res = await request(app)
+      .post('/rest/memories')
+      .set('Authorization', 'Bearer ' + token)
+      .attach('image', Buffer.alloc(200001), { filename: 'tooBig.png', contentType: 'image/png' })
+      .field('caption', 'Too big')
+    assert.notEqual(res.status, 200)
   })
 })

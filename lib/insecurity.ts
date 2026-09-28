@@ -172,6 +172,17 @@ export const isCustomer = (req: Request) => {
   return decodedToken?.data?.role === roles.customer
 }
 
+export const ensureAuthenticated = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const user = authenticatedUsers.from(req)
+    if (user?.data?.id) {
+      next()
+      return
+    }
+    res.status(401).json({ status: 'error', message: 'Unauthorized' })
+  }
+}
+
 export const appendUserId = () => {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
