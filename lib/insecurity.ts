@@ -90,6 +90,76 @@ export const authenticatedUsers: IAuthenticatedUsers = {
   }
 }
 
+/*
+ * Sessions are only backed by a signed JWT, so tokens stay technically valid
+ * until they expire. To be able to actually terminate a session server-side
+ * (e.g. when a password was changed and the old credential got retired) the
+ * revocation state below is kept in addition to the session cache.
+ */
+const revokedTokens = new Set<string>()
+const retainedTokens = new Set<string>()
+const credentialsChangedAt: Record<string, number> = {}
+
+/**
+ * Invalidates all sessions of the given user, e.g. after a credential change.
+ *
+ * The cached session snapshots are dropped _and_ the tokens are remembered as
+ * revoked, so that a token cannot be re-activated from its own (by then stale)
+ * payload again. Tokens issued before the invalidation are rejected as well,
+ * which also covers sessions that are not part of the cache (anymore).
+ * The optional `keepToken` spares the session which performed the change.
+ */
+export const invalidateSessionsOf = (userId: number | string, keepToken?: string) => {
+  const retainedToken = keepToken ? utils.unquote(keepToken) : undefined
+  credentialsChangedAt[`${userId}`] = Math.floor(Date.now() / 1000)
+  for (const [token, session] of Object.entries(authenticatedUsers.tokenMap)) {
+    if (`${session?.data?.id}` !== `${userId}` || token === retainedToken) {
+      continue
+    }
+    delete authenticatedUsers.tokenMap[token]
+    retainedTokens.delete(token)
+    revokedTokens.add(token)
+  }
+  if (authenticatedUsers.idMap[`${userId}`] !== retainedToken) {
+    delete authenticatedUsers.idMap[`${userId}`]
+  }
+  if (retainedToken) {
+    retainedTokens.add(retainedToken)
+  }
+}
+
+/** Checks if a token belongs to a session that was terminated server-side. */
+export const isSessionRevoked = (token?: string) => {
+  if (!token) {
+    return false
+  }
+  const cleanToken = utils.unquote(token)
+  if (revokedTokens.has(cleanToken)) {
+    return true
+  }
+  if (retainedTokens.has(cleanToken) || !verify(cleanToken)) {
+    return false
+  }
+  const payload = decode(cleanToken) as any
+  const userId = payload?.data?.id
+  const issuedAt = payload?.iat
+  if (userId === undefined || typeof issuedAt !== 'number') {
+    return false
+  }
+  const changedAt = credentialsChangedAt[`${userId}`]
+  return changedAt !== undefined && issuedAt < changedAt
+}
+
+/** Rejects requests which are made with a session that was terminated server-side. */
+export const denyRevokedSessions = () => (req: Request, res: Response, next: NextFunction) => {
+  const token = utils.jwtFrom(req) ?? req.cookies?.token
+  if (isSessionRevoked(token)) {
+    res.status(401).json({ error: 'Session is no longer valid. Please log in again.' })
+    return
+  }
+  next()
+}
+
 export const userEmailFrom = ({ headers }: any) => {
   return headers ? headers['x-user-email'] : undefined
 }
@@ -185,7 +255,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && !isSessionRevoked(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)

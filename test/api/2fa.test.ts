@@ -425,3 +425,58 @@ void describe('/rest/2fa/disable', () => {
     assert.equal(res.status, 401)
   })
 })
+
+void describe('2FA re-authentication after a password change', () => {
+  void it('POST /rest/2fa/disable should not accept a retired password and not accept sessions from before the password change', async () => {
+    const email = 'fooooostale1@bar.com'
+    const password = '123456'
+    const newPassword = '1234567'
+    const totpSecret = 'KDR5FXSOLNV6A5UAQYCKROSJZF7SVML7'
+
+    await register(app, { email, password, totpSecret })
+    const { token: tokenBeforeChange } = await login(app, { email, password, totpSecret })
+
+    // ensure the second session gets a distinct token (the issued-at claim has second precision)
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    const { token: tokenChangingPassword } = await login(app, { email, password, totpSecret })
+
+    const changeRes = await request(app)
+      .get(`/rest/user/change-password?current=${password}&new=${newPassword}&repeat=${newPassword}`)
+      .set({ Authorization: 'Bearer ' + tokenChangingPassword })
+    assert.equal(changeRes.status, 200)
+
+    // the session created with the now retired password must not be usable anymore
+    assert.equal((await getStatus(tokenBeforeChange)).status, 401)
+
+    const staleSessionRes = await request(app)
+      .post('/rest/2fa/disable')
+      .set({
+        Authorization: 'Bearer ' + tokenBeforeChange,
+        'content-type': 'application/json'
+      })
+      .send({ password })
+    assert.equal(staleSessionRes.status, 401)
+
+    // the retired password must not satisfy the re-authentication of the surviving session either
+    const retiredPasswordRes = await request(app)
+      .post('/rest/2fa/disable')
+      .set({
+        Authorization: 'Bearer ' + tokenChangingPassword,
+        'content-type': 'application/json'
+      })
+      .send({ password })
+    assert.equal(retiredPasswordRes.status, 401)
+    assert.equal((await getStatus(tokenChangingPassword)).body.setup, true)
+
+    // only the current password may disable 2fa
+    const disableRes = await request(app)
+      .post('/rest/2fa/disable')
+      .set({
+        Authorization: 'Bearer ' + tokenChangingPassword,
+        'content-type': 'application/json'
+      })
+      .send({ password: newPassword })
+    assert.equal(disableRes.status, 200)
+    assert.equal((await getStatus(tokenChangingPassword)).body.setup, false)
+  })
+})

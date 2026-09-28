@@ -7,6 +7,7 @@ import { type Request, type Response, type NextFunction } from 'express'
 import * as challengeUtils from '../lib/challengeUtils'
 import { challenges } from '../data/datacache'
 import { UserModel } from '../models/user'
+import * as utils from '../lib/utils'
 import * as security from '../lib/insecurity'
 
 export function changePassword () {
@@ -36,11 +37,6 @@ export function changePassword () {
       return
     }
 
-    if (currentPassword && security.hash(currentPassword) !== loggedInUser.data.password) {
-      res.status(401).send(res.__('Current password is not correct.'))
-      return
-    }
-
     try {
       const user = await UserModel.findByPk(loggedInUser.data.id)
       if (!user) {
@@ -48,7 +44,21 @@ export function changePassword () {
         return
       }
 
+      /* Check the current password against the database and not against the session
+         snapshot, which could still hold an already retired password hash. */
+      if (currentPassword && security.hash(currentPassword) !== user.password) {
+        res.status(401).send(res.__('Current password is not correct.'))
+        return
+      }
+
       await user.update({ password: newPasswordInString })
+
+      /* The previous password is retired now: terminate all other sessions of that
+         user and refresh the session performing the change, so that no token keeps
+         authenticating or re-authenticating against the outdated password hash. */
+      security.invalidateSessionsOf(user.id, token)
+      security.authenticatedUsers.put(token, { ...loggedInUser, ...utils.queryResultToJson(user) })
+
       challengeUtils.solveIf(
         challenges.changePasswordBenderChallenge,
         () => user.id === 3 && !currentPassword && user.password === security.hash('slurmCl4ssic')

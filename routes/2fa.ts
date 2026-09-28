@@ -104,11 +104,18 @@ export async function setup (req: Request, res: Response) {
 
     const { password, setupToken, initialToken } = req.body
 
-    if (user.password !== security.hash(password)) {
+    // Re-authenticate against the current database state instead of the session
+    // snapshot, which could still hold an already retired password hash.
+    const userModel = await UserModel.findByPk(user.id)
+    if (userModel == null) {
+      throw new Error('No such user found!')
+    }
+
+    if (userModel.password !== security.hash(password)) {
       throw new Error('Password doesnt match stored password')
     }
 
-    if (user.totpSecret !== '') {
+    if (userModel.totpSecret !== '') {
       throw new Error('User has 2fa already setup')
     }
 
@@ -121,11 +128,6 @@ export async function setup (req: Request, res: Response) {
     }
 
     // Update db model and cached object
-    const userModel = await UserModel.findByPk(user.id)
-    if (userModel == null) {
-      throw new Error('No such user found!')
-    }
-
     userModel.totpSecret = secret
     await userModel.save()
     security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(userModel))
@@ -149,16 +151,18 @@ export async function disable (req: Request, res: Response) {
 
     const { password } = req.body
 
-    if (user.password !== security.hash(password)) {
-      throw new Error('Password doesnt match stored password')
-    }
-
-    // Update db model and cached object
+    // Re-authenticate against the current database state instead of the session
+    // snapshot, which could still hold an already retired password hash.
     const userModel = await UserModel.findByPk(user.id)
     if (userModel == null) {
       throw new Error('No such user found!')
     }
 
+    if (userModel.password !== security.hash(password)) {
+      throw new Error('Password doesnt match stored password')
+    }
+
+    // Update db model and cached object
     userModel.totpSecret = ''
     await userModel.save()
     security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(userModel))

@@ -371,6 +371,8 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Checks on JWT in Authorization header */ // vuln-code-snippet hide-line
   app.use(verify.jwtChallenges()) // vuln-code-snippet hide-line
   app.use(security.updateAuthenticatedUsers()) // vuln-code-snippet hide-line
+  /* Sessions revoked server-side (e.g. after a password change) are not accepted anymore */ // vuln-code-snippet hide-line
+  app.use(security.denyRevokedSessions()) // vuln-code-snippet hide-line
   /* Baskets: Unauthorized users are not allowed to access baskets */
   app.use('/rest/basket', security.isAuthorized(), security.appendUserId())
   /* BasketItems: API only accessible for authenticated users */

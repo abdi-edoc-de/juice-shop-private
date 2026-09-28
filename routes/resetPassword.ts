@@ -42,6 +42,8 @@ export function resetPassword () {
         const user = await UserModel.findByPk(data.UserId)
         if (user) {
           const updatedUser = await user.update({ password: newPassword })
+          /* The previous password is retired now, so no session created with it may survive */
+          security.invalidateSessionsOf(updatedUser.id)
           verifySecurityAnswerChallenges(updatedUser, answer)
           res.json({ user: updatedUser })
         }
