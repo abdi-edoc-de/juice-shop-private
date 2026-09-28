@@ -34,16 +34,24 @@ export function addBasketItem () {
     }
 
     const user = security.authenticatedUsers.from(req)
-    if (user && basketIds[0] && basketIds[0] !== 'undefined' && Number(user.bid) != Number(basketIds[0])) { // eslint-disable-line eqeqeq
+    const basketItem = {
+      ProductId: productIds[productIds.length - 1],
+      BasketId: basketIds[basketIds.length - 1],
+      quantity: quantities[quantities.length - 1]
+    }
+
+    // The raw body is parsed with a streaming parser which keeps _every_ occurrence of a
+    // duplicated key. Authorizing only one occurrence while persisting another one would allow
+    // smuggling a foreign basket id past the ownership check, so every supplied BasketId has to
+    // belong to the authenticated user - including the one that is actually persisted.
+    const suppliedBasketIds = basketIds.filter((basketId) => basketId && basketId !== 'undefined')
+    const foreignBasketId = suppliedBasketIds.some((basketId) => Number(user?.bid) !== Number(basketId))
+
+    challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return !!user && suppliedBasketIds.length > 0 && foreignBasketId })
+
+    if (user && suppliedBasketIds.length > 0 && foreignBasketId) {
       res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
     } else {
-      const basketItem = {
-        ProductId: productIds[productIds.length - 1],
-        BasketId: basketIds[basketIds.length - 1],
-        quantity: quantities[quantities.length - 1]
-      }
-      challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && basketItem.BasketId && basketItem.BasketId !== 'undefined' && user.bid != basketItem.BasketId }) // eslint-disable-line eqeqeq
-
       const basketItemInstance = BasketItemModel.build(basketItem)
       try {
         const addedBasketItem = await basketItemInstance.save()

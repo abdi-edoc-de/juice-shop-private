@@ -82,6 +82,24 @@ void describe('/api/BasketItems', () => {
     assert.equal(res.text, "{'error' : 'Invalid BasketId'}")
   })
 
+  void it('POST new basket item with duplicated BasketId keys smuggling a foreign basket is forbidden', async () => {
+    const res = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send('{"ProductId":2,"BasketId":2,"quantity":1,"BasketId":42}')
+    assert.equal(res.status, 401)
+    assert.equal(res.text, "{'error' : 'Invalid BasketId'}")
+  })
+
+  void it('POST new basket item with duplicated BasketId keys of the own basket is allowed', async () => {
+    const res = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send('{"ProductId":2,"BasketId":2,"quantity":1,"BasketId":2}')
+    assert.equal(res.status, 200)
+    assert.equal(res.body.data.BasketId, 2)
+  })
+
   void it('POST new basket item with non-existent product ID is forbidden', async () => {
     const res = await request(app)
       .post('/api/BasketItems')
