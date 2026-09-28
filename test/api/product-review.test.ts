@@ -49,14 +49,52 @@ void describe('/rest/products/:id/reviews', () => {
   })
 
   void it('PUT single product review can be created', async () => {
+    const { token } = await login(app, {
+      email: 'bjoern.kimminich@gmail.com',
+      password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+    })
     const res = await request(app)
       .put('/rest/products/1/reviews')
+      .set({ Authorization: `Bearer ${token}` })
       .send({
         message: 'Lorem Ipsum',
         author: 'Anonymous'
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
+  })
+
+  void it('PUT single product review creation needs an authenticated user', async () => {
+    const res = await request(app)
+      .put('/rest/products/1/reviews')
+      .send({
+        message: 'Lorem Ipsum',
+        author: 'Anonymous'
+      })
+    assert.equal(res.status, 401)
+  })
+
+  void it('PUT single product review uses the author from the session instead of the request body', async () => {
+    const { token } = await login(app, {
+      email: 'bjoern.kimminich@gmail.com',
+      password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+    })
+    const message = `Session author check ${Date.now()}`
+    const createRes = await request(app)
+      .put('/rest/products/1/reviews')
+      .set({ Authorization: `Bearer ${token}` })
+      .send({
+        message,
+        author: 'admin@juice-sh.op'
+      })
+    assert.equal(createRes.status, 201)
+
+    const res = await request(app)
+      .get('/rest/products/1/reviews')
+    assert.equal(res.status, 200)
+    const review = res.body.data.find((entry: { message: string }) => entry.message === message)
+    assert.ok(review)
+    assert.equal(review.author, 'bjoern.kimminich@gmail.com')
   })
 })
 
