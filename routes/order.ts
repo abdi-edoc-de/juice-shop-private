@@ -35,6 +35,16 @@ export function placeOrder () {
     BasketModel.findOne({ where: { id }, include: [{ model: ProductModel, paranoid: false, as: 'Products' }] })
       .then(async (basket: BasketModel | null) => {
         if (basket != null) {
+          // Re-validate the basket contents server-side: a persisted quantity below 1 would
+          // produce a negative line total and, at wallet checkout, credit the customer's wallet.
+          const invalidBasketItem = (basket.Products ?? []).find(({ BasketItem }) => {
+            return BasketItem != null && !(Number.isInteger(BasketItem.quantity) && BasketItem.quantity >= 1)
+          })
+          if (invalidBasketItem != null) {
+            next(new Error('Basket contains an item with an invalid quantity.'))
+            return
+          }
+
           const customer = security.authenticatedUsers.from(req)
           const email = customer ? customer.data ? customer.data.email : '' : ''
           const orderId = security.hash(email).slice(0, 4) + '-' + utils.randomHexString(16)
@@ -145,9 +155,12 @@ export function placeOrder () {
 
           if (req.body.UserId) {
             if (req.body.orderDetails && req.body.orderDetails.paymentId === 'wallet') {
+              // never debit a negative amount: Sequelize's decrement would turn it into a
+              // credit and let a customer create wallet funds out of nothing
+              const amountToDebit = Math.max(0, totalPrice)
               const wallet = await WalletModel.findOne({ where: { UserId: req.body.UserId } })
-              if ((wallet != null) && wallet.balance >= totalPrice) {
-                await WalletModel.decrement({ balance: totalPrice }, { where: { UserId: req.body.UserId } })
+              if ((wallet != null) && wallet.balance >= amountToDebit) {
+                await WalletModel.decrement({ balance: amountToDebit }, { where: { UserId: req.body.UserId } })
               } else {
                 next(new Error('Insufficient wallet balance.'))
                 return

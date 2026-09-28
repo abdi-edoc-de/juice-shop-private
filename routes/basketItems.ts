@@ -44,6 +44,13 @@ export function addBasketItem () {
       }
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && basketItem.BasketId && basketItem.BasketId !== 'undefined' && user.bid != basketItem.BasketId }) // eslint-disable-line eqeqeq
 
+      // The quantity actually persisted is the last occurrence in the raw body, which can
+      // differ from the one validated by the quantity pre-check, so re-verify the lower bound.
+      if (!isValidQuantity(basketItem.quantity)) {
+        res.status(400).json({ error: res.__('Quantity must be a positive integer.') })
+        return
+      }
+
       const basketItemInstance = BasketItemModel.build(basketItem)
       try {
         const addedBasketItem = await basketItemInstance.save()
@@ -68,7 +75,7 @@ export function quantityCheckBeforeBasketItemUpdate () {
       const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
       const user = security.authenticatedUsers.from(req)
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && req.body.BasketId && user.bid != req.body.BasketId }) // eslint-disable-line eqeqeq
-      if (req.body.quantity) {
+      if (req.body.quantity !== undefined && req.body.quantity !== null) {
         if (item == null) {
           throw new Error('No such item found!')
         }
@@ -82,7 +89,19 @@ export function quantityCheckBeforeBasketItemUpdate () {
   }
 }
 
+function isValidQuantity (quantity: unknown) {
+  const parsedQuantity = Number(quantity)
+  return Number.isInteger(parsedQuantity) && parsedQuantity >= 1
+}
+
 async function quantityCheck (req: Request, res: Response, next: NextFunction, id: number, quantity: number) {
+  // a basket item must always hold at least one product, otherwise the line total
+  // (and with it the order total) can turn negative and credit the wallet at checkout
+  if (!isValidQuantity(quantity)) {
+    res.status(400).json({ error: res.__('Quantity must be a positive integer.') })
+    return
+  }
+
   const product = await QuantityModel.findOne({ where: { ProductId: id } })
   if (product == null) {
     throw new Error('No such product found!')

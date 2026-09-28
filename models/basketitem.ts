@@ -36,7 +36,16 @@ const BasketItemModelInit = (sequelize: Sequelize) => {
         primaryKey: true,
         autoIncrement: true
       },
-      quantity: DataTypes.INTEGER
+      quantity: {
+        type: DataTypes.INTEGER,
+        // A basket item always represents at least one ordered product. Persisting a
+        // zero or negative quantity would allow negative line totals (and in turn
+        // negative order totals crediting the customer's wallet) at checkout.
+        validate: {
+          isInt: true,
+          min: 1
+        }
+      }
     },
     {
       tableName: 'BasketItems',
