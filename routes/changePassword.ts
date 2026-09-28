@@ -4,8 +4,6 @@
  */
 
 import { type Request, type Response, type NextFunction } from 'express'
-import * as challengeUtils from '../lib/challengeUtils'
-import { challenges } from '../data/datacache'
 import { UserModel } from '../models/user'
 import * as security from '../lib/insecurity'
 
@@ -36,7 +34,9 @@ export function changePassword () {
       return
     }
 
-    if (currentPassword && security.hash(currentPassword) !== loggedInUser.data.password) {
+    // Proof of knowledge of the current password is mandatory: a missing parameter
+    // must never short-circuit the verification and allow an account takeover.
+    if (!currentPassword || security.hash(currentPassword) !== loggedInUser.data.password) {
       res.status(401).send(res.__('Current password is not correct.'))
       return
     }
@@ -49,10 +49,6 @@ export function changePassword () {
       }
 
       await user.update({ password: newPasswordInString })
-      challengeUtils.solveIf(
-        challenges.changePasswordBenderChallenge,
-        () => user.id === 3 && !currentPassword && user.password === security.hash('slurmCl4ssic')
-      )
       res.json({ user })
     } catch (error) {
       next(error)

@@ -11,6 +11,7 @@ import config from 'config'
 import { createTestApp } from './helpers/setup'
 import type { Product as ProductConfig } from '../../lib/config.schema'
 import * as utils from '../../lib/utils'
+import * as security from '../../lib/insecurity'
 
 let app: Express
 
@@ -201,10 +202,15 @@ void describe('Hidden URL', () => {
     assert.equal(res.status, 200)
   })
 
-  void it('GET folder containing access log files for "Access Log" challenge', async () => {
-    const res = await request(app)
+  void it('GET access log file requires an admin authorization', async () => {
+    const anonymousRes = await request(app)
       .get('/support/logs/access.log.' + utils.toISO8601(new Date()))
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/octet-stream'))
+    assert.ok(anonymousRes.status === 401 || anonymousRes.status === 403)
+
+    const adminRes = await request(app)
+      .get('/support/logs/access.log.' + utils.toISO8601(new Date()))
+      .set({ Authorization: `Bearer ${security.authorize({ data: { email: 'admin@juice-sh.op', role: security.roles.admin } })}` })
+    assert.equal(adminRes.status, 200)
+    assert.ok(adminRes.headers['content-type']?.includes('application/octet-stream'))
   })
 })

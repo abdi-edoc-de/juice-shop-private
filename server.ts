@@ -297,9 +297,9 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/encryptionkeys/:file', serveKeyFiles())
 
   /* /logs directory browsing */ // vuln-code-snippet neutral-line accessLogDisclosureChallenge
-  app.use('/support/logs', serveIndexMiddleware, serveIndex('logs', { icons: true, view: 'details' })) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
+  app.use('/support/logs', security.isAuthorized(), security.isAdmin(), serveIndexMiddleware, serveIndex('logs', { icons: true, view: 'details' })) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
   app.use('/support/logs', verify.accessControlChallenges()) // vuln-code-snippet hide-line
-  app.use('/support/logs/:file', serveLogFiles()) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
+  app.use('/support/logs/:file', security.isAuthorized(), security.isAdmin(), serveLogFiles()) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
 
   /* Swagger documentation for B2B v2 endpoints */
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
@@ -354,7 +354,26 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     verbose: false,
     max_logs: '2d'
   })
-  app.use(morgan('combined', { stream: accessLogStream }))
+  /* Redact credentials and other secrets carried in query strings so that they are
+     never persisted to the access log (which may be served to operators later). */
+  const sensitiveQueryParams = ['current', 'new', 'repeat', 'password', 'pass', 'token', 'answer', 'apikey', 'api_key', 'secret']
+  morgan.token('sanitized-url', (req: Request) => {
+    const originalUrl = req.originalUrl || req.url
+    const queryStart = originalUrl.indexOf('?')
+    if (queryStart === -1) {
+      return originalUrl
+    }
+    const params = new URLSearchParams(originalUrl.substring(queryStart + 1))
+    let redacted = false
+    for (const key of Array.from(params.keys())) {
+      if (sensitiveQueryParams.includes(key.toLowerCase())) {
+        params.set(key, '[REDACTED]')
+        redacted = true
+      }
+    }
+    return redacted ? `${originalUrl.substring(0, queryStart)}?${params.toString()}` : originalUrl
+  })
+  app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :sanitized-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"', { stream: accessLogStream }))
 
   // vuln-code-snippet start resetPasswordMortyChallenge
   /* Rate limiting */
