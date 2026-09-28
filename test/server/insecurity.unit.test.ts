@@ -343,5 +343,40 @@ void describe('insecurity', () => {
     void it('denyAll returns a middleware', () => {
       assert.equal(typeof security.denyAll(), 'function')
     })
+
+    void it('filterUserRegistrationAttributes should strip attributes not allowed during self-registration', () => {
+      const req = {
+        body: {
+          email: 'test@juice-sh.op',
+          password: 'secret',
+          passwordRepeat: 'secret',
+          securityQuestion: { id: 1 },
+          securityAnswer: 'answer',
+          role: 'accounting',
+          deluxeToken: 'forged',
+          isActive: false,
+          totpSecret: 'forged',
+          profileImage: 'https://example.com/evil.svg',
+          id: 42
+        }
+      } as any
+      let nextCalled = false
+      security.filterUserRegistrationAttributes()(req, {} as any, () => { nextCalled = true })
+      assert.deepEqual(Object.keys(req.body).sort(), ['email', 'password', 'passwordRepeat', 'securityAnswer', 'securityQuestion'])
+      assert.ok(nextCalled)
+    })
+
+    void it('filterUserRegistrationAttributes should strip attributes from every entry of an array payload', () => {
+      const req = { body: [{ email: 'a@juice-sh.op', role: 'admin' }, { email: 'b@juice-sh.op', role: 'admin' }] } as any
+      security.filterUserRegistrationAttributes()(req, {} as any, () => {})
+      assert.deepEqual(req.body, [{ email: 'a@juice-sh.op' }, { email: 'b@juice-sh.op' }])
+    })
+
+    void it('filterUserRegistrationAttributes should tolerate a missing body', () => {
+      const req = { body: undefined } as any
+      let nextCalled = false
+      security.filterUserRegistrationAttributes()(req, {} as any, () => { nextCalled = true })
+      assert.ok(nextCalled)
+    })
   })
 })

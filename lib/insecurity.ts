@@ -195,3 +195,36 @@ export const updateAuthenticatedUsers = () => (req: Request, res: Response, next
   }
   next()
 }
+
+/* Attributes an anonymous client is allowed to provide when self-registering via POST /api/Users.
+   Everything else - most importantly `role`, but also `deluxeToken`, `isActive`, `totpSecret`,
+   `profileImage` and `id` - is server-controlled and must never be bound from the request body. */
+export const userRegistrationAttributes = new Set([
+  'email',
+  'password',
+  'passwordRepeat',
+  'securityQuestion',
+  'securityAnswer'
+])
+
+const dropUnexpectedRegistrationAttributes = (payload: Record<string, unknown>) => {
+  for (const attribute of Object.keys(payload)) {
+    if (!userRegistrationAttributes.has(attribute)) {
+      delete payload[attribute]
+    }
+  }
+}
+
+export const filterUserRegistrationAttributes = () => (req: Request, res: Response, next: NextFunction) => {
+  const body: unknown = req.body
+  if (Array.isArray(body)) {
+    for (const entry of body) {
+      if (entry !== null && typeof entry === 'object') {
+        dropUnexpectedRegistrationAttributes(entry as Record<string, unknown>)
+      }
+    }
+  } else if (body !== null && typeof body === 'object') {
+    dropUnexpectedRegistrationAttributes(body as Record<string, unknown>)
+  }
+  next()
+}
