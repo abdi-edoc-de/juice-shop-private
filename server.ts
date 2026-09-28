@@ -160,6 +160,33 @@ const collectDurationPromise = (name: string, func: (...args: any) => Promise<an
   }
 }
 
+/*
+ * Creates the security answer supplied during registration for the user that was actually
+ * created. The owner is never taken from the request body, because the security answer is
+ * the only factor needed by POST /rest/user/reset-password: accepting a client-supplied
+ * UserId would allow anyone to plant the password-reset factor of an arbitrary account.
+ */
+async function createSecurityAnswerForRegisteredUser (req: Request, userId: number) {
+  const answer = req.body?.securityAnswer
+  const securityQuestionId = req.body?.securityQuestion?.id ?? req.body?.SecurityQuestionId
+  if (!answer || !securityQuestionId) {
+    return
+  }
+  try {
+    const securityQuestion = await SecurityQuestionModel.findByPk(securityQuestionId)
+    if (securityQuestion == null) {
+      return
+    }
+    await SecurityAnswerModel.create({
+      UserId: userId,
+      SecurityQuestionId: securityQuestion.id,
+      answer
+    })
+  } catch (err: unknown) {
+    console.log(err)
+  }
+}
+
 /* Sets view engine to hbs */
 app.set('view engine', 'hbs')
 
@@ -410,9 +437,10 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* SecurityQuestions: Only GET list of questions allowed. */
   app.post('/api/SecurityQuestions', security.denyAll())
   app.use('/api/SecurityQuestions/:id', security.denyAll())
-  /* SecurityAnswers: Only POST of answer allowed. */
+  /* SecurityAnswers: Only POST of an answer for the own account allowed. */
   app.get('/api/SecurityAnswers', security.denyAll())
   app.use('/api/SecurityAnswers/:id', security.denyAll())
+  app.post('/api/SecurityAnswers', security.isAuthorized(), security.appendUserId())
   /* REST API */
   app.use('/rest/user/authentication-details', security.isAuthorized())
   app.use('/rest/basket/:id', security.isAuthorized())
@@ -525,12 +553,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
       include
     })
 
-    // create a wallet when a new user is registered using API
+    // create a wallet and store the security answer when a new user is registered using API
     if (name === 'User') { // vuln-code-snippet neutral-line registerAdminChallenge
       resource.create.send.before((req: Request, res: Response, context: { instance: { id: any }, continue: any }) => { // vuln-code-snippet vuln-line registerAdminChallenge
         WalletModel.create({ UserId: context.instance.id }).catch((err: unknown) => {
           console.log(err)
         })
+        void createSecurityAnswerForRegisteredUser(req, context.instance.id)
         return context.continue // vuln-code-snippet neutral-line registerAdminChallenge
       }) // vuln-code-snippet neutral-line registerAdminChallenge
     } // vuln-code-snippet neutral-line registerAdminChallenge
