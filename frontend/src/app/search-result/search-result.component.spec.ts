@@ -215,15 +215,25 @@ describe('SearchResultComponent', () => {
         expect(component.dataSource.filter).toEqual('product search')
     })
 
-    it('should pass the search query as trusted HTML', () => {
+    it('should keep the search query as plain text instead of trusted HTML', () => {
         activatedRoute.setQueryParameter('<script>scripttag</script>')
         component.filterTable()
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<script>scripttag</script>')
+        expect(component.searchValue).toBe('<script>scripttag</script>')
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalledWith('<script>scripttag</script>')
+    })
+
+    it('should render the search query escaped so that injected markup is not interpreted', () => {
+        activatedRoute.setQueryParameter('<img src=x onerror="alert(1)">')
+        component.filterTable()
+        fixture.detectChanges()
+        const searchValueEl = (fixture.nativeElement as HTMLElement).querySelector('#searchValue')
+        expect(searchValueEl?.querySelector('img')).toBeNull()
+        expect(searchValueEl?.textContent).toContain('<img src=x onerror="alert(1)">')
     })
 
     describe('template rendering', () => {
         it('should render the all-products heading when no search value is set', () => {
-            component.searchValue = undefined as any
+            component.searchValue = undefined
             component.emptyState = false
             fixture.detectChanges()
             const heading = (fixture.nativeElement as HTMLElement).querySelector('.heading')
@@ -232,7 +242,7 @@ describe('SearchResultComponent', () => {
         })
 
         it('should render the search results heading with the current search value', () => {
-            component.searchValue = 'apple' as any
+            component.searchValue = 'apple'
             fixture.detectChanges()
             const searchValueEl = (fixture.nativeElement as HTMLElement).querySelector('#searchValue')
             expect(searchValueEl).toBeTruthy()
