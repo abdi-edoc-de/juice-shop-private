@@ -167,7 +167,7 @@ resource "aws_lb_listener" "http" {
 resource "aws_iam_server_certificate" "juice_shop_tls" {
   name             = "${var.project_name}-tls-cert"
   certificate_body = file("${path.module}/certs/server.crt")
-  private_key      = base64decode("LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ0KTUlJQ1hBSUJBQUtCZ1FETndxTEVlOXdnVFhDYkM3K1JQZERiQmJlcWpkYnM0a09QT0lHenFMcFh2Slhsxx...")
+  private_key      = base64decode("LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ0KTUlJRW93SUJBQUtDQVFFQXN4ZUZndERNeFA4K1JCK3JkWWxQdVFEMWdkTGtJUEU2TE5YN2xmVGt2Vms2SWxx...")
 
   lifecycle {
     create_before_destroy = true

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import config from 'config'
 import { type NextFunction, type Request, type Response } from 'express'
 import yaml from 'js-yaml'
 import fs from 'node:fs/promises'
@@ -22,6 +23,8 @@ interface VerdictRequestBody {
   key: ChallengeKey
 }
 
+export const codingChallengesDisabled = () => config.get('challenges.codingChallengesEnabled') === 'never'
+
 const setStatusCode = (error: any) => {
   switch (error.name) {
     case 'BrokenBoundary':
@@ -40,6 +43,10 @@ export const retrieveCodeSnippet = async (challengeKey: string) => {
 }
 
 export const serveCodeSnippet = () => async (req: Request<SnippetRequestBody, Record<string, unknown>, Record<string, unknown>>, res: Response, next: NextFunction) => {
+  if (codingChallengesDisabled()) {
+    res.status(404).json({ status: 'error', error: 'Code snippets are disabled' })
+    return
+  }
   try {
     const snippetData = await retrieveCodeSnippet(req.params.challenge)
     if (snippetData == null) {
@@ -68,6 +75,10 @@ export const getVerdict = (vulnLines: number[], neutralLines: number[], selected
 }
 
 export const checkVulnLines = () => async (req: Request<Record<string, unknown>, Record<string, unknown>, VerdictRequestBody>, res: Response, next: NextFunction) => {
+  if (codingChallengesDisabled()) {
+    res.status(404).json({ status: 'error', error: 'Code snippets are disabled' })
+    return
+  }
   const key = req.body.key
   let snippetData
   try {

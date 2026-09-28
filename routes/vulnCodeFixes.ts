@@ -4,6 +4,7 @@ import { type NextFunction, type Request, type Response } from 'express'
 
 import * as accuracy from '../lib/accuracy'
 import * as challengeUtils from '../lib/challengeUtils'
+import { codingChallengesDisabled } from './vulnCodeSnippet'
 import { type ChallengeKey } from '@juice-shop/models/challenge'
 
 const FixesDir = 'data/static/codefixes'
@@ -54,6 +55,10 @@ interface VerdictRequestBody {
 }
 
 export const serveCodeFixes = () => (req: Request<FixesRequestParams, Record<string, unknown>, Record<string, unknown>>, res: Response, next: NextFunction) => {
+  if (codingChallengesDisabled()) {
+    res.status(404).json({ error: 'No fixes found for the snippet!' })
+    return
+  }
   const key = req.params.key
   const fixData = readFixes(key)
   if (fixData.fixes.length === 0) {
@@ -68,6 +73,10 @@ export const serveCodeFixes = () => (req: Request<FixesRequestParams, Record<str
 }
 
 export const checkCorrectFix = () => async (req: Request<Record<string, unknown>, Record<string, unknown>, VerdictRequestBody>, res: Response, next: NextFunction) => {
+  if (codingChallengesDisabled()) {
+    res.status(404).json({ error: 'No fixes found for the snippet!' })
+    return
+  }
   const key = req.body.key
   const selectedFix = req.body.selectedFix
   const fixData = readFixes(key)
