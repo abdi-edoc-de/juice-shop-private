@@ -365,6 +365,12 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     keyGenerator ({ headers, ip }: { headers: any, ip: any }) { return headers['X-Forwarded-For'] ?? ip } // vuln-code-snippet vuln-line resetPasswordMortyChallenge
   }))
   // vuln-code-snippet end resetPasswordMortyChallenge
+  /* Throttle credential submissions to blunt brute-force and injection probing of the login endpoint */
+  app.use('/rest/user/login', rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 100,
+    validate: false
+  }))
 
   // vuln-code-snippet start changeProductChallenge
   /** Authorization **/
