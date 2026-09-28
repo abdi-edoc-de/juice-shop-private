@@ -41,6 +41,44 @@ interface IAuthenticatedUsers {
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
 export const hmac = (data: string) => crypto.createHmac('sha256', 'pa4qacea4VK9t9nGv7yZtwmj').update(data).digest('hex')
 
+const SCRYPT_KEYLEN = 64
+const SCRYPT_COST = 16384
+const SCRYPT_BLOCK_SIZE = 8
+const SCRYPT_PARALLELIZATION = 1
+const SALT_LENGTH = 32
+
+/**
+ * Hash a password using scrypt with a random salt.
+ * Returns a string in the format: salt$derivedKey (both hex-encoded).
+ */
+export const hashPassword = (clearText: string): string => {
+  const salt = crypto.randomBytes(SALT_LENGTH).toString('hex')
+  const derived = crypto.scryptSync(clearText, salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_COST,
+    r: SCRYPT_BLOCK_SIZE,
+    p: SCRYPT_PARALLELIZATION
+  })
+  return salt + '$' + derived.toString('hex')
+}
+
+/**
+ * Verify a cleartext password against a stored scrypt hash (salt$derivedKey format).
+ */
+export const verifyPassword = (clearText: string, storedHash: string): boolean => {
+  const parts = storedHash.split('$')
+  if (parts.length !== 2) {
+    return false
+  }
+  const [salt, key] = parts
+  const derived = crypto.scryptSync(clearText, salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_COST,
+    r: SCRYPT_BLOCK_SIZE,
+    p: SCRYPT_PARALLELIZATION
+  })
+  const storedKeyBuffer = Buffer.from(key, 'hex')
+  return crypto.timingSafeEqual(derived, storedKeyBuffer)
+}
+
 export const cutOffPoisonNullByte = (str: string) => {
   const nullByte = '%00'
   if (str.includes(nullByte)) {
@@ -49,9 +87,34 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
+/** Fields that must never appear in a JWT payload */
+const JWT_SENSITIVE_FIELDS = ['password', 'totpSecret']
+
+/**
+ * Strip sensitive fields from a user object before it is signed into a JWT.
+ */
+export const sanitizeUserForJwt = (user: any): any => {
+  if (user && typeof user === 'object') {
+    const sanitized = { ...user }
+    if (sanitized.data && typeof sanitized.data === 'object') {
+      const sanitizedData = { ...sanitized.data }
+      for (const field of JWT_SENSITIVE_FIELDS) {
+        delete sanitizedData[field]
+      }
+      sanitized.data = sanitizedData
+    } else {
+      for (const field of JWT_SENSITIVE_FIELDS) {
+        delete sanitized[field]
+      }
+    }
+    return sanitized
+  }
+  return user
+}
+
 export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
+export const authorize = (user = {}) => jwt.sign(sanitizeUserForJwt(user), privateKey, { expiresIn: '6h', algorithm: 'RS256' })
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 

@@ -104,7 +104,12 @@ export async function setup (req: Request, res: Response) {
 
     const { password, setupToken, initialToken } = req.body
 
-    if (user.password !== security.hash(password)) {
+    const userModel = await UserModel.findByPk(user.id)
+    if (userModel == null) {
+      throw new Error('No such user found!')
+    }
+
+    if (!security.verifyPassword(password, userModel.password)) {
       throw new Error('Password doesnt match stored password')
     }
 
@@ -121,11 +126,6 @@ export async function setup (req: Request, res: Response) {
     }
 
     // Update db model and cached object
-    const userModel = await UserModel.findByPk(user.id)
-    if (userModel == null) {
-      throw new Error('No such user found!')
-    }
-
     userModel.totpSecret = secret
     await userModel.save()
     security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(userModel))
@@ -149,16 +149,16 @@ export async function disable (req: Request, res: Response) {
 
     const { password } = req.body
 
-    if (user.password !== security.hash(password)) {
-      throw new Error('Password doesnt match stored password')
-    }
-
-    // Update db model and cached object
     const userModel = await UserModel.findByPk(user.id)
     if (userModel == null) {
       throw new Error('No such user found!')
     }
 
+    if (!security.verifyPassword(password, userModel.password)) {
+      throw new Error('Password doesnt match stored password')
+    }
+
+    // Update db model and cached object
     userModel.totpSecret = ''
     await userModel.save()
     security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(userModel))
