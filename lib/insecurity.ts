@@ -39,7 +39,60 @@ interface IAuthenticatedUsers {
 }
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
-export const hmac = (data: string) => crypto.createHmac('sha256', 'pa4qacea4VK9t9nGv7yZtwmj').update(data).digest('hex')
+
+// Password-equivalent secrets (e.g. answers to security questions) are stored as
+// salted scrypt derivations instead of a fast keyed digest, so that neither a
+// leaked source secret nor a database read allows recovering the plaintext and
+// identical answers of different users no longer produce identical records.
+const SCRYPT_COST = 16384 // CPU/memory cost factor (N)
+const SCRYPT_BLOCK_SIZE = 8 // block size (r)
+const SCRYPT_PARALLELIZATION = 1 // parallelization (p)
+const SCRYPT_KEY_LENGTH = 64
+const SCRYPT_SALT_LENGTH = 16
+const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024
+const SCRYPT_MAX_COST = 1 << 20
+
+const deriveScryptKey = (secret: string, salt: Buffer, cost: number, blockSize: number, parallelization: number, keyLength: number) => {
+  return crypto.scryptSync(secret.normalize('NFKC'), salt, keyLength, {
+    N: cost,
+    r: blockSize,
+    p: parallelization,
+    maxmem: SCRYPT_MAX_MEMORY
+  })
+}
+
+export const hashSecurityAnswer = (answer: string) => {
+  const salt = crypto.randomBytes(SCRYPT_SALT_LENGTH)
+  const derivedKey = deriveScryptKey(answer ?? '', salt, SCRYPT_COST, SCRYPT_BLOCK_SIZE, SCRYPT_PARALLELIZATION, SCRYPT_KEY_LENGTH)
+  return `scrypt$${SCRYPT_COST}$${SCRYPT_BLOCK_SIZE}$${SCRYPT_PARALLELIZATION}$${salt.toString('base64')}$${derivedKey.toString('base64')}`
+}
+
+export const verifySecurityAnswer = (answer: string, storedAnswer?: string | null) => {
+  if (typeof answer !== 'string' || typeof storedAnswer !== 'string') {
+    return false
+  }
+  const parts = storedAnswer.split('$')
+  if (parts.length !== 6 || parts[0] !== 'scrypt') {
+    return false
+  }
+  const cost = Number(parts[1])
+  const blockSize = Number(parts[2])
+  const parallelization = Number(parts[3])
+  const salt = Buffer.from(parts[4], 'base64')
+  const expectedKey = Buffer.from(parts[5], 'base64')
+  if (!Number.isInteger(cost) || cost < 2 || cost > SCRYPT_MAX_COST ||
+      !Number.isInteger(blockSize) || blockSize < 1 || blockSize > 32 ||
+      !Number.isInteger(parallelization) || parallelization < 1 || parallelization > 16 ||
+      salt.length === 0 || expectedKey.length === 0) {
+    return false
+  }
+  try {
+    const derivedKey = deriveScryptKey(answer, salt, cost, blockSize, parallelization, expectedKey.length)
+    return crypto.timingSafeEqual(derivedKey, expectedKey)
+  } catch {
+    return false
+  }
+}
 
 export const cutOffPoisonNullByte = (str: string) => {
   const nullByte = '%00'

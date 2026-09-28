@@ -196,11 +196,38 @@ void describe('insecurity', () => {
     })
   })
 
-  void describe('hmac', () => {
-    void it('returns SHA-256 HMAC with "pa4qacea4VK9t9nGv7yZtwmj" as salt any input string', () => {
-      assert.equal(security.hmac('admin123'), '6be13e2feeada221f29134db71c0ab0be0e27eccfc0fb436ba4096ba73aafb20')
-      assert.equal(security.hmac('password'), 'da28fc4354f4a458508a461fbae364720c4249c27f10fccf68317fc4bf6531ed')
-      assert.equal(security.hmac(''), 'f052179ec5894a2e79befa8060cfcb517f1e14f7f6222af854377b6481ae953e')
+  void describe('hashSecurityAnswer', () => {
+    void it('returns a salted scrypt derivation including its cost parameters', () => {
+      const hashed = security.hashSecurityAnswer('Samuel')
+      const parts = hashed.split('$')
+      assert.equal(parts.length, 6)
+      assert.equal(parts[0], 'scrypt')
+      assert.equal(parts[1], '16384')
+      assert.equal(Buffer.from(parts[4], 'base64').length, 16)
+      assert.equal(Buffer.from(parts[5], 'base64').length, 64)
+    })
+
+    void it('returns a different result for the same answer on every call', () => {
+      assert.notEqual(security.hashSecurityAnswer('Samuel'), security.hashSecurityAnswer('Samuel'))
+    })
+  })
+
+  void describe('verifySecurityAnswer', () => {
+    void it('accepts the answer the stored value was derived from', () => {
+      assert.equal(security.verifySecurityAnswer('Samuel', security.hashSecurityAnswer('Samuel')), true)
+      assert.equal(security.verifySecurityAnswer('', security.hashSecurityAnswer('')), true)
+    })
+
+    void it('rejects a wrong answer', () => {
+      assert.equal(security.verifySecurityAnswer('samuel', security.hashSecurityAnswer('Samuel')), false)
+      assert.equal(security.verifySecurityAnswer('Samuel', security.hashSecurityAnswer('Zaya')), false)
+    })
+
+    void it('rejects missing or malformed stored values', () => {
+      assert.equal(security.verifySecurityAnswer('Samuel', undefined), false)
+      assert.equal(security.verifySecurityAnswer('Samuel', ''), false)
+      assert.equal(security.verifySecurityAnswer('Samuel', 'd2425fd880e7f38c5b091a2aa32c89e7de94f0aee517ba8a6025e1287acefade'), false)
+      assert.equal(security.verifySecurityAnswer('Samuel', 'scrypt$0$8$1$c2FsdA==$aGFzaA=='), false)
     })
   })
 
