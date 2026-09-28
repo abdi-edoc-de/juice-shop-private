@@ -7,6 +7,11 @@ import { type Request, type Response, type NextFunction } from 'express'
 import { MemoryModel } from '../models/memory'
 import { UserModel } from '../models/user'
 
+// The photo wall is a public feature, so only the bare minimum of uploader data
+// may be serialised here. Never expand this list with sensitive columns such as
+// email, password, role, deluxeToken, lastLoginIp or totpSecret.
+const PUBLIC_UPLOADER_ATTRIBUTES = ['id', 'username'] as const
+
 export function addMemory () {
   return async (req: Request, res: Response, next: NextFunction) => {
     const record = {
@@ -21,7 +26,12 @@ export function addMemory () {
 
 export function getMemories () {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const memories = await MemoryModel.findAll({ include: [UserModel] })
+    const memories = await MemoryModel.findAll({
+      include: [{
+        model: UserModel,
+        attributes: [...PUBLIC_UPLOADER_ATTRIBUTES]
+      }]
+    })
     res.status(200).json({ status: 'success', data: memories })
   }
 }

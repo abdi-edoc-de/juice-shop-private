@@ -26,6 +26,20 @@ void describe('/rest/memories', () => {
     assert.equal(res.status, 200)
   })
 
+  void it('GET memories does not expose sensitive uploader attributes', async () => {
+    const res = await request(app)
+      .get('/rest/memories')
+    assert.equal(res.status, 200)
+    const forbiddenAttributes = ['email', 'password', 'role', 'deluxeToken', 'lastLoginIp', 'totpSecret']
+    for (const memory of res.body.data) {
+      if (!memory.User) continue
+      assert.deepEqual(Object.keys(memory.User).sort(), ['id', 'username'])
+      for (const attribute of forbiddenAttributes) {
+        assert.ok(!(attribute in memory.User), `${attribute} must not be serialised on the public photo wall`)
+      }
+    }
+  })
+
   void it('GET memories via a valid authorization token', async () => {
     const { token } = await login(app, {
       email: 'jim@' + config.get<string>('application.domain'),
