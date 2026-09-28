@@ -15,16 +15,80 @@ import * as utils from '../lib/utils'
 
 const entities = new Entities()
 
+/* Single byte range as defined by RFC 7233, e.g. "bytes=0-100", "bytes=500-" or "bytes=-500".
+   Multiple ranges and non-"bytes" units are deliberately not matched and lead to the header being ignored. */
+const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/
+
+type ParsedRange =
+  /* Header is well-formed and can be served as 206 Partial Content */
+  | { type: 'satisfiable', start: number, end: number }
+  /* Header is well-formed but cannot be satisfied for this file, must be answered with 416 */
+  | { type: 'unsatisfiable' }
+  /* Header is malformed or unsupported, must be ignored and the full entity served instead */
+  | { type: 'ignore' }
+
+/**
+ * Parses and validates a client-supplied Range header against the actual file size.
+ *
+ * Never returns NaN, negative, inverted or out-of-bounds offsets, so the result can safely be
+ * handed to fs.createReadStream() without risking a synchronous ERR_OUT_OF_RANGE throw (which
+ * would surface as a 500 response including a server-side stack trace).
+ */
+function parseByteRange (rangeHeader: string, fileSize: number): ParsedRange {
+  const match = SINGLE_BYTE_RANGE_PATTERN.exec(rangeHeader.trim())
+  if (match === null) {
+    return { type: 'ignore' }
+  }
+
+  const [, rawStart, rawEnd] = match
+  if (rawStart === '' && rawEnd === '') {
+    return { type: 'ignore' }
+  }
+
+  if (rawStart === '') {
+    /* Suffix range "bytes=-N": the last N bytes of the file */
+    const suffixLength = Number(rawEnd)
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0 || fileSize === 0) {
+      return { type: 'unsatisfiable' }
+    }
+    return { type: 'satisfiable', start: Math.max(fileSize - suffixLength, 0), end: fileSize - 1 }
+  }
+
+  const start = Number(rawStart)
+  const requestedEnd = rawEnd === '' ? fileSize - 1 : Number(rawEnd)
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd)) {
+    return { type: 'unsatisfiable' }
+  }
+  if (start >= fileSize) {
+    return { type: 'unsatisfiable' }
+  }
+  /* An end beyond EOF is clamped, an inverted range is rejected */
+  const end = Math.min(requestedEnd, fileSize - 1)
+  if (end < start) {
+    return { type: 'unsatisfiable' }
+  }
+  return { type: 'satisfiable', start, end }
+}
+
 export const getVideo = () => {
   return (req: Request, res: Response) => {
     const path = videoPath()
     const stat = fs.statSync(path)
     const fileSize = stat.size
     const range = req.headers.range
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-')
-      const start = parseInt(parts[0], 10)
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+    const parsedRange = range ? parseByteRange(range, fileSize) : { type: 'ignore' as const }
+
+    if (parsedRange.type === 'unsatisfiable') {
+      res.writeHead(416, {
+        'Content-Range': `bytes */${fileSize}`,
+        'Accept-Ranges': 'bytes'
+      })
+      res.end()
+      return
+    }
+
+    if (parsedRange.type === 'satisfiable') {
+      const { start, end } = parsedRange
       const chunksize = (end - start) + 1
       const file = fs.createReadStream(path, { start, end })
       const head = {
@@ -35,14 +99,18 @@ export const getVideo = () => {
         'Content-Type': 'video/mp4'
       }
       res.writeHead(206, head)
+      file.on('error', () => { res.destroy() })
       file.pipe(res)
     } else {
       const head = {
         'Content-Length': fileSize,
+        'Accept-Ranges': 'bytes',
         'Content-Type': 'video/mp4'
       }
       res.writeHead(200, head)
-      fs.createReadStream(path).pipe(res)
+      const file = fs.createReadStream(path)
+      file.on('error', () => { res.destroy() })
+      file.pipe(res)
     }
   }
 }

@@ -45,4 +45,53 @@ void describe('/video', () => {
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('video/mp4'))
   })
+
+  void it('GET promotion video with valid range returns partial content', async () => {
+    const res = await request(app)
+      .get('/video')
+      .set('Range', 'bytes=0-100')
+    assert.equal(res.status, 206)
+    assert.equal(res.headers['content-length'], '101')
+    assert.ok(res.headers['content-range']?.startsWith('bytes 0-100/'))
+  })
+
+  void it('GET promotion video with suffix range returns partial content', async () => {
+    const res = await request(app)
+      .get('/video')
+      .set('Range', 'bytes=-100')
+    assert.equal(res.status, 206)
+    assert.equal(res.headers['content-length'], '100')
+  })
+
+  void it('GET promotion video clamps a range reaching beyond EOF', async () => {
+    const res = await request(app)
+      .get('/video')
+      .set('Range', 'bytes=0-99999999')
+    assert.equal(res.status, 206)
+    const [, total] = /\/(\d+)$/.exec(res.headers['content-range'] ?? '') ?? []
+    assert.ok(total !== undefined)
+    assert.equal(res.headers['content-range'], `bytes 0-${Number(total) - 1}/${total}`)
+  })
+
+  void it('GET promotion video ignores a non-numeric range instead of failing', async () => {
+    for (const range of ['bytes=abc-', 'bytes=abc-def', 'bytes=-', 'kilobytes=0-100', 'bytes=0-100,200-300']) {
+      const res = await request(app)
+        .get('/video')
+        .set('Range', range)
+      assert.equal(res.status, 200, `expected full content for Range "${range}"`)
+      assert.ok(res.headers['content-type']?.includes('video/mp4'))
+    }
+  })
+
+  void it('GET promotion video rejects an unsatisfiable range without leaking a stack trace', async () => {
+    for (const range of ['bytes=500-1', 'bytes=99999999-', 'bytes=-0']) {
+      const res = await request(app)
+        .get('/video')
+        .set('Range', range)
+      assert.equal(res.status, 416, `expected 416 for Range "${range}"`)
+      assert.ok(res.headers['content-range']?.startsWith('bytes */'))
+      assert.ok(!res.text?.includes('ERR_OUT_OF_RANGE'))
+      assert.ok(!res.text?.includes('node_modules'))
+    }
+  })
 })
