@@ -75,12 +75,40 @@ void describe('redirect', () => {
     assert.equal(challenges.redirectCryptoCurrencyChallenge.solved, true)
   })
 
-  void it('tricking the allowlist should solve "redirectChallenge"', () => {
+  void it('should raise error for URL only containing an allowlisted URL', () => {
     req.query.to = 'http://kimminich.de?to=https://github.com/juice-shop/juice-shop'
     challenges.redirectChallenge = { solved: false, save } as unknown as Challenge
 
     performRedirect()(req, res, next)
 
-    assert.equal(challenges.redirectChallenge.solved, true)
+    assert.equal(res.redirect.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    assert.equal(challenges.redirectChallenge.solved, false)
+  })
+
+  void it('should raise error for protocol-relative URL smuggling an allowlisted URL', () => {
+    req.query.to = '//evil.example/?x=https://github.com/juice-shop/juice-shop'
+
+    performRedirect()(req, res, next)
+
+    assert.equal(res.redirect.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+  })
+
+  void it('should raise error when no target URL is given', () => {
+    performRedirect()(req, res, next)
+
+    assert.equal(res.redirect.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+  })
+
+  void it('should not reflect the rejected target URL in the error message', () => {
+    req.query.to = 'https://evil.example/phish'
+
+    performRedirect()(req, res, next)
+
+    const error = next.mock.calls[0].arguments[0] as Error
+    assert.ok(!error.message.includes('evil.example'))
   })
 })

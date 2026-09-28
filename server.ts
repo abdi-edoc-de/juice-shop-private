@@ -698,7 +698,22 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Error Handling */
   app.use(verify.errorHandlingChallenge())
-  app.use(errorhandler())
+  if (process.env.NODE_ENV === 'production') {
+    /* Never leak stack traces and internal paths in production */
+    app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+      logger.error(`Unhandled error while processing ${req.method} ${req.originalUrl}: ${error.message}`)
+      if (res.headersSent) {
+        next(error)
+        return
+      }
+      if (res.statusCode < 400) {
+        res.status(500)
+      }
+      res.type('text/plain').send('An error occurred while processing your request.')
+    })
+  } else {
+    app.use(errorhandler())
+  }
 }
 
 // Function called first to ensure that all the i18n files are reloaded successfully before other linked operations.

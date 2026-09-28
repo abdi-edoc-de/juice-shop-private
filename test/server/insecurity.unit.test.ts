@@ -255,8 +255,11 @@ void describe('insecurity', () => {
       }
     })
 
-    void it('returns true for URLs containing allowed URLs', () => {
-      assert.equal(security.isRedirectAllowed('https://github.com/juice-shop/juice-shop/issues'), true)
+    void it('returns false for URLs merely containing allowed URLs', () => {
+      assert.equal(security.isRedirectAllowed('https://github.com/juice-shop/juice-shop/issues'), false)
+      assert.equal(security.isRedirectAllowed('https://evil.example/phish?x=https://github.com/juice-shop/juice-shop'), false)
+      assert.equal(security.isRedirectAllowed('https://evil.example/login#https://github.com/juice-shop/juice-shop'), false)
+      assert.equal(security.isRedirectAllowed('//evil.example/?x=https://github.com/juice-shop/juice-shop'), false)
     })
 
     void it('returns false for disallowed URLs', () => {

@@ -1,23 +1,21 @@
 describe('/redirect', () => {
-  describe('challenge "redirectChallenge"', () => {
+  describe('redirect target validation', () => {
     it('should show error page when supplying an unrecognized target URL', () => {
       cy.visit('/redirect?to=http://kimminich.de', {
         failOnStatusCode: false
       })
-      cy.contains('Unrecognized target URL for redirect: http://kimminich.de')
+      cy.contains('Unrecognized target URL for redirect')
     })
-  })
 
-  describe('challenge "redirectChallenge"', () => {
-    it('should redirect to target URL if allowlisted URL is contained in it as parameter', () => {
+    it('should not redirect to target URL if an allowlisted URL is only contained in it as parameter', () => {
       cy.visit(
         '/redirect?to=https://owasp.org?trickIndexOf=https://github.com/juice-shop/juice-shop',
         {
           failOnStatusCode: false
         }
       )
-      cy.url().should('match', /https:\/\/owasp\.org/)
-      cy.expectChallengeSolved({ challenge: 'Allowlist Bypass' })
+      cy.url().should('not.match', /https:\/\/owasp\.org/)
+      cy.contains('Unrecognized target URL for redirect')
     })
   })
 
