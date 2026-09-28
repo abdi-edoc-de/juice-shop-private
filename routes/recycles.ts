@@ -8,16 +8,19 @@ import { RecycleModel } from '../models/recycle'
 
 import * as utils from '../lib/utils'
 
-export const getRecycleItem = () => (req: Request, res: Response) => {
-  RecycleModel.findAll({
-    where: {
-      id: JSON.parse(req.params.id)
-    }
-  }).then((Recycle) => {
-    return res.send(utils.queryResultToJson(Recycle))
-  }).catch((_: unknown) => {
-    return res.send('Error fetching recycled items. Please try again')
-  })
+export const getRecycleItem = () => async (req: Request, res: Response) => {
+  // The path parameter has to be a plain numeric id so it cannot widen the
+  // selector of the where clause into an array or an operator object.
+  if (!/^\d+$/.test(req.params.id)) {
+    res.status(400).json(utils.queryResultToJson('Invalid recycle id.', 'error'))
+    return
+  }
+  const recycle = await RecycleModel.findOne({ where: { id: Number.parseInt(req.params.id, 10), UserId: req.body.UserId } })
+  if (recycle == null) {
+    res.status(400).json(utils.queryResultToJson('Malicious activity detected.', 'error'))
+    return
+  }
+  res.status(200).json(utils.queryResultToJson([recycle]))
 }
 
 export const blockRecycleItems = () => (req: Request, res: Response) => {

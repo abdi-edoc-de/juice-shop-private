@@ -12,6 +12,7 @@ import { login } from './helpers/auth'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
+let otherAuthHeader: { Authorization: string, 'content-type': string }
 let addressId: string
 
 before(
@@ -25,6 +26,15 @@ before(
     })
     authHeader = {
       Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+
+    const { token: otherToken } = await login(app, {
+      email: 'bender@juice-sh.op',
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+    otherAuthHeader = {
+      Authorization: 'Bearer ' + otherToken,
       'content-type': 'application/json'
     }
   },
@@ -168,6 +178,47 @@ void describe('/api/Addresss/:id', () => {
       .set(authHeader)
       .send({ zipCode: 'NX 10111111' })
     assert.equal(res.status, 400)
+  })
+
+  void it('PUT update address of another user is not possible', async () => {
+    const res = await request(app)
+      .put('/api/Addresss/' + addressId)
+      .set(otherAuthHeader)
+      .send({ streetAddress: '666 ATTACKER ST' })
+    assert.equal(res.status, 400)
+    assert.equal(res.body.status, 'error')
+    assert.equal(res.body.data, 'Malicious activity detected.')
+
+    const unchanged = await request(app)
+      .get('/api/Addresss/' + addressId)
+      .set(authHeader)
+    assert.equal(unchanged.status, 200)
+    assert.equal(unchanged.body.data.streetAddress, 'Bakers Street')
+  })
+
+  void it('PUT update address cannot reassign ownership or id', async () => {
+    const owner = await request(app)
+      .get('/api/Addresss/' + addressId)
+      .set(authHeader)
+    const ownUserId = owner.body.data.UserId
+
+    const res = await request(app)
+      .put('/api/Addresss/' + addressId)
+      .set(authHeader)
+      .send({ UserId: ownUserId + 1000, id: 999999, city: 'NYC' })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.data.UserId, ownUserId)
+    assert.equal(String(res.body.data.id), String(addressId))
+  })
+
+  void it('PUT update address by non-existing id returns 400 for authorized user', async () => {
+    const res = await request(app)
+      .put('/api/Addresss/999999')
+      .set(authHeader)
+      .send({ city: 'NYC' })
+    assert.equal(res.status, 400)
+    assert.equal(res.body.status, 'error')
+    assert.equal(res.body.data, 'Malicious activity detected.')
   })
 
   void it('DELETE address by id', async () => {

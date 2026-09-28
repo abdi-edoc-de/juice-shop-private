@@ -8,23 +8,28 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import * as security from '../../lib/insecurity'
+import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+let authHeader: { Authorization: string, 'content-type': string }
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+
+  const { token } = await login(app, {
+    email: 'jim@juice-sh.op',
+    password: 'ncc-1701'
+  })
+  authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 }, { timeout: 60000 })
 
 void describe('/api/PrivacyRequests', () => {
-  void it('POST new complaint', async () => {
+  void it('POST new privacy request', async () => {
     const res = await request(app)
       .post('/api/PrivacyRequests')
       .set(authHeader)
       .send({
-        UserId: 1,
         deletionRequested: false
       })
     assert.equal(res.status, 201)
@@ -32,6 +37,30 @@ void describe('/api/PrivacyRequests', () => {
     assert.equal(typeof res.body.data.id, 'number')
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
+  })
+
+  void it('POST new privacy request cannot be attributed to another user', async () => {
+    const baseline = await request(app)
+      .post('/api/PrivacyRequests')
+      .set(authHeader)
+      .send({ deletionRequested: false })
+    assert.equal(baseline.status, 201)
+    const ownUserId = baseline.body.data.UserId
+
+    const spoofed = await request(app)
+      .post('/api/PrivacyRequests')
+      .set(authHeader)
+      .send({ UserId: ownUserId + 1000, deletionRequested: true })
+    assert.equal(spoofed.status, 201)
+    assert.equal(spoofed.body.data.UserId, ownUserId)
+  })
+
+  void it('POST new privacy request is forbidden via public API', async () => {
+    const res = await request(app)
+      .post('/api/PrivacyRequests')
+      .set({ 'content-type': 'application/json' })
+      .send({ deletionRequested: true })
+    assert.equal(res.status, 401)
   })
 
   void it('GET all privacy requests is forbidden via public API', async () => {

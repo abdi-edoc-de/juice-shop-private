@@ -5,6 +5,11 @@
 
 import { type Request, type Response } from 'express'
 import { AddressModel } from '../models/address'
+import * as utils from '../lib/utils'
+
+// Attributes a user is allowed to change on their own address. Deliberately
+// excludes `id` and `UserId` so an update can neither re-key nor re-own a row.
+const updatableAttributes = ['fullName', 'mobileNum', 'zipCode', 'streetAddress', 'city', 'state', 'country'] as const
 
 export function getAddress () {
   return async (req: Request, res: Response) => {
@@ -20,6 +25,22 @@ export function getAddressById () {
       res.status(200).json({ status: 'success', data: address })
     } else {
       res.status(400).json({ status: 'error', data: 'Malicious activity detected.' })
+    }
+  }
+}
+
+export function updateAddressById () {
+  return async (req: Request, res: Response) => {
+    const address = await AddressModel.findOne({ where: { id: req.params.id, UserId: req.body.UserId } })
+    if (address == null) {
+      res.status(400).json({ status: 'error', data: 'Malicious activity detected.' })
+      return
+    }
+    try {
+      const updatedAddress = await address.update(req.body, { fields: [...updatableAttributes] })
+      res.status(200).json({ status: 'success', data: updatedAddress })
+    } catch (error: unknown) {
+      res.status(400).json({ status: 'error', data: utils.getErrorMessage(error) })
     }
   }
 }
