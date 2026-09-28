@@ -9,13 +9,17 @@ import fs from 'fs-extra'
 import * as utils from '../utils'
 
 const cleanupFtpFolder = async () => {
-  try {
-    const files = await glob('ftp/*.pdf', { windowsPathsNoEscape: true })
-    for (const filename of files) {
-      await fs.remove(filename)
+  // 'ftp/*.pdf' is included to also remove order invoices left behind by previous versions
+  // which used to write them into the publicly browsable /ftp folder
+  for (const pattern of ['ftp/*.pdf', 'invoices/*.pdf']) {
+    try {
+      const files = await glob(pattern, { windowsPathsNoEscape: true })
+      for (const filename of files) {
+        await fs.remove(filename)
+      }
+    } catch (err) {
+      logger.warn(`Error listing PDF files in ${pattern}: ` + utils.getErrorMessage(err))
     }
-  } catch (err) {
-    logger.warn('Error listing PDF files in /ftp folder: ' + utils.getErrorMessage(err))
   }
 }
 export default cleanupFtpFolder

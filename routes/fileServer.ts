@@ -9,6 +9,7 @@ import { type Request, type Response, type NextFunction } from 'express'
 import * as security from '../lib/insecurity'
 import { challenges } from '../data/datacache'
 import * as challengeUtils from '../lib/challengeUtils'
+import { isInvoiceFileName } from './orderInvoice'
 
 export function servePublicFiles () {
   return ({ params, query }: Request, res: Response, next: NextFunction) => {
@@ -25,6 +26,14 @@ export function servePublicFiles () {
   function verify (file: string, res: Response, next: NextFunction) {
     if (file && (endsWithAllowlistedFileType(file) || (file === 'incident-support.kdbx'))) {
       file = security.cutOffPoisonNullByte(file)
+
+      // Order confirmation PDFs contain customer PII and must only be served by the
+      // authenticated & ownership-checked /rest/order-history/:orderId/invoice route
+      if (isInvoiceFileName(file)) {
+        res.status(403)
+        next(new Error('Order invoices cannot be accessed here!'))
+        return
+      }
 
       challengeUtils.solveIf(challenges.directoryListingChallenge, () => { return file.toLowerCase() === 'acquisitions.md' })
       verifySuccessfulPoisonNullByteExploit(file)

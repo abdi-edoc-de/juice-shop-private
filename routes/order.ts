@@ -4,7 +4,6 @@
  */
 
 import fs from 'node:fs'
-import path from 'node:path'
 import config from 'config'
 import { type Request, type Response, type NextFunction } from 'express'
 
@@ -19,6 +18,7 @@ import { WalletModel } from '../models/wallet'
 import * as security from '../lib/insecurity'
 import * as utils from '../lib/utils'
 import * as db from '../data/mongodb'
+import { ensureInvoiceDirectoryExists, invoicePath } from './orderInvoice'
 
 interface Product {
   quantity: number
@@ -38,11 +38,11 @@ export function placeOrder () {
           const customer = security.authenticatedUsers.from(req)
           const email = customer ? customer.data ? customer.data.email : '' : ''
           const orderId = security.hash(email).slice(0, 4) + '-' + utils.randomHexString(16)
-          const pdfFile = `order_${orderId}.pdf`
           const { default: PDFDocument } = await import('pdfkit')
           const doc = new PDFDocument()
           const date = new Date().toJSON().slice(0, 10)
-          const fileWriter = doc.pipe(fs.createWriteStream(path.join('ftp/', pdfFile)))
+          ensureInvoiceDirectoryExists()
+          const fileWriter = doc.pipe(fs.createWriteStream(invoicePath(orderId)))
 
           fileWriter.on('finish', () => {
             void (async () => {

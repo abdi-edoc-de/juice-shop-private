@@ -188,6 +188,20 @@ void describe('/ftp', () => {
     assert.ok(responseText(res).includes('"epilogue-js": "~0.7",'))
   })
 
+  void it('GET an order invoice from /ftp is forbidden', async () => {
+    const res = await request(app)
+      .get('/ftp/order_1234-1234567890abcdef.pdf')
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Order invoices cannot be accessed here!'))
+  })
+
+  void it('GET the directory listing does not contain order invoices', async () => {
+    const res = await request(app)
+      .get('/ftp')
+    assert.equal(res.status, 200)
+    assert.ok(!/order_[^"]*\.pdf/.test(res.text))
+  })
+
   void it('GET file /ftp/quarantine/juicy_malware_linux_amd_64.url', async () => {
     const res = await request(app)
       .get('/ftp/quarantine/juicy_malware_linux_amd_64.url')

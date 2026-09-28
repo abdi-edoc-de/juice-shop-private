@@ -50,6 +50,8 @@ describe('AccountingComponent', () => {
             get: vi.fn().mockName("OrderHistoryService.get")
         }
         orderHistoryService.get.mockReturnValue(of([]))
+        orderHistoryService.getInvoice = vi.fn().mockName("OrderHistoryService.getInvoice")
+        orderHistoryService.getInvoice.mockReturnValue(of(new Blob(['%PDF-1.3'], { type: 'application/pdf' })))
         basketService = { hostServer: 'http://host.example' }
         router = { navigate: vi.fn().mockName("Router.navigate").mockResolvedValue(true) }
 
@@ -157,10 +159,15 @@ describe('AccountingComponent', () => {
         expect(passed.deluxePrice).toBe(15)
     })
 
-    it('should open the order confirmation PDF in a new tab using the basket host server', () => {
+    it('should open the order confirmation PDF in a new tab after downloading it from the authenticated endpoint', () => {
         const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:invoice')
+        const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => { })
         component.openConfirmationPDF('abc123')
-        expect(openSpy).toHaveBeenCalledWith('http://host.example/ftp/order_abc123.pdf', '_blank')
+        expect(orderHistoryService.getInvoice).toHaveBeenCalledWith('abc123')
+        expect(openSpy).toHaveBeenCalledWith('blob:invoice', '_blank')
+        createObjectURLSpy.mockRestore()
+        revokeObjectURLSpy.mockRestore()
         openSpy.mockRestore()
     })
 
