@@ -33,6 +33,16 @@ void describe('/api/Complaints', () => {
     assert.equal(typeof res.body.data.updatedAt, 'string')
   })
 
+  void it('POST new complaint with message exceeding the maximum length', async () => {
+    const res = await request(app)
+      .post('/api/Complaints')
+      .set(authHeader)
+      .send({
+        message: 'A'.repeat(4097)
+      })
+    assert.equal(res.status, 400)
+  })
+
   void it('GET all complaints is forbidden via public API', async () => {
     const res = await request(app)
       .get('/api/Complaints')

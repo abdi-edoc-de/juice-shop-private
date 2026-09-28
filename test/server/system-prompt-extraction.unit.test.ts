@@ -118,6 +118,11 @@ void describe('checkSystemPromptSimilarity', () => {
     assert.equal(checkSystemPromptSimilarity('random text', reference, 0.15), false)
   })
 
+  void it('returns false for submissions too long to ever reach the threshold', async () => {
+    assert.equal(checkSystemPromptSimilarity('A'.repeat(95000), reference), false)
+    assert.equal(checkSystemPromptSimilarity(reference.repeat(50), reference), false)
+  })
+
   void it('handles very long submissions (prompt repeated 3x)', async () => {
     const result = checkSystemPromptSimilarity(reference.repeat(3), reference)
     assert.equal(typeof result, 'boolean')

@@ -4,7 +4,7 @@
  */
 
 import { type NextFunction, type Request, type Response } from 'express'
-import { Op } from 'sequelize'
+import { Op, col, fn, where as sequelizeWhere } from 'sequelize'
 import jwt from 'jsonwebtoken'
 import config from 'config'
 import jws from 'jws'
@@ -360,18 +360,81 @@ function dangerousIngredients () {
     })
 }
 
-export function checkSystemPromptSimilarity (submission: string, reference: string, threshold = 0.25): boolean {
-  const score = utils.diceCoefficient((submission ?? '').toLowerCase().trim(), reference.toLowerCase().trim(), 3)
+const SYSTEM_PROMPT_SIMILARITY_NGRAM_SIZE = 3
+const SYSTEM_PROMPT_SIMILARITY_THRESHOLD = 0.25
+/** Number of complaints inspected per scan, keeping the work triggered by a single request constant. */
+const SYSTEM_PROMPT_SCAN_BATCH_SIZE = 100
+/** Minimum delay before already inspected complaints are examined again. */
+const SYSTEM_PROMPT_RESCAN_INTERVAL_MS = 60000
+
+/** Id of the last complaint inspected, so that every complaint is only examined once per rescan interval. */
+let systemPromptScanCursor = 0
+let systemPromptLastFullScanAt = 0
+let systemPromptScanRunning = false
+
+/**
+ * Longest submission that can still reach the given similarity threshold against a reference of the
+ * given length. Anything longer is guaranteed to score below the threshold, because the number of
+ * matching n-grams is capped by the shorter of both strings while the denominator keeps growing.
+ */
+function maxRelevantSubmissionLength (referenceLength: number, threshold: number, n: number): number {
+  const maxMatchingNGrams = Math.max(0, referenceLength - n + 1)
+  return Math.floor((2 * maxMatchingNGrams) / threshold - referenceLength + 2 * (n - 1))
+}
+
+export function checkSystemPromptSimilarity (submission: string, reference: string, threshold = SYSTEM_PROMPT_SIMILARITY_THRESHOLD): boolean {
+  const normalizedSubmission = (submission ?? '').toLowerCase().trim()
+  const normalizedReference = reference.toLowerCase().trim()
+  // Skip the O(n) comparison for submissions that cannot possibly reach the threshold anyway
+  if (normalizedSubmission.length > maxRelevantSubmissionLength(normalizedReference.length, threshold, SYSTEM_PROMPT_SIMILARITY_NGRAM_SIZE)) {
+    return false
+  }
+  const score = utils.diceCoefficient(normalizedSubmission, normalizedReference, SYSTEM_PROMPT_SIMILARITY_NGRAM_SIZE)
   return score >= threshold
 }
 
+/**
+ * Scans complaints for a leaked system prompt. As this runs for every request as long as the challenge
+ * is unsolved, the scan is deliberately bounded: overlapping scans are suppressed and each scan reads at
+ * most one batch of complaints, only the message column, only complaints not inspected yet and only
+ * those short enough to be able to reach the similarity threshold at all. Without those bounds the
+ * complaints table - which anyone can grow but nobody can shrink - would turn every single request into
+ * an ever increasing amount of synchronous work on the event loop.
+ */
 async function systemPromptExtractionChallenge (): Promise<void> {
-  const reference = buildSystemPrompt().toLowerCase().trim()
-  const complaints = await ComplaintModel.findAll().catch(() => [])
-  for (const complaint of complaints) {
-    if (checkSystemPromptSimilarity(complaint.message ?? '', reference)) {
-      challengeUtils.solveIf(challenges.systemPromptExtractionChallenge, () => true)
-      return
+  if (systemPromptScanRunning) {
+    return
+  }
+  systemPromptScanRunning = true
+  try {
+    const now = Date.now()
+    if (systemPromptScanCursor > 0 && now - systemPromptLastFullScanAt >= SYSTEM_PROMPT_RESCAN_INTERVAL_MS) {
+      systemPromptScanCursor = 0 // occasionally start over, e.g. to cope with reset challenge progress
     }
+    const reference = buildSystemPrompt().toLowerCase().trim()
+    const maxMessageLength = maxRelevantSubmissionLength(reference.length, SYSTEM_PROMPT_SIMILARITY_THRESHOLD, SYSTEM_PROMPT_SIMILARITY_NGRAM_SIZE)
+    const complaints = await ComplaintModel.findAll({
+      attributes: ['id', 'message'],
+      where: {
+        [Op.and]: [
+          { id: { [Op.gt]: systemPromptScanCursor } },
+          sequelizeWhere(fn('length', col('message')), { [Op.lte]: maxMessageLength })
+        ]
+      },
+      order: [['id', 'ASC']],
+      limit: SYSTEM_PROMPT_SCAN_BATCH_SIZE
+    }).catch(() => [])
+    for (const complaint of complaints) {
+      systemPromptScanCursor = complaint.id
+      if (checkSystemPromptSimilarity(complaint.message ?? '', reference)) {
+        challengeUtils.solveIf(challenges.systemPromptExtractionChallenge, () => true)
+        return
+      }
+    }
+    if (complaints.length < SYSTEM_PROMPT_SCAN_BATCH_SIZE) {
+      systemPromptLastFullScanAt = now // all complaints inspected, the next scans only pick up new ones
+    }
+  } finally {
+    systemPromptScanRunning = false
   }
 }

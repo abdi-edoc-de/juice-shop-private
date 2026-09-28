@@ -12,6 +12,9 @@ import {
   type Sequelize
 } from 'sequelize'
 
+/** Kept in sync with the maximum message length enforced by the complaint form in the frontend. */
+const MAX_MESSAGE_LENGTH = 4096
+
 class Complaint extends Model<
 InferAttributes<Complaint>,
 InferCreationAttributes<Complaint>
@@ -33,7 +36,13 @@ const ComplaintModelInit = (sequelize: Sequelize) => {
         primaryKey: true,
         autoIncrement: true
       },
-      message: DataTypes.STRING(4096),
+      message: {
+        type: DataTypes.STRING(MAX_MESSAGE_LENGTH),
+        // SQLite does not enforce the declared VARCHAR length, so the limit is validated explicitly
+        validate: {
+          len: [0, MAX_MESSAGE_LENGTH]
+        }
+      },
       file: DataTypes.STRING
     },
     {
