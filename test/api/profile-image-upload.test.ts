@@ -164,6 +164,7 @@ void describe('/profile/image/url (with local mock server)', () => {
     userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).data.id
 
     const imageBuffer = fs.readFileSync(path.resolve(__dirname, '../files/validProfileImage.jpg'))
+    const pngBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
     mockServer = http.createServer((req, res) => {
       if (req.url?.includes('non-ok')) {
@@ -172,6 +173,14 @@ void describe('/profile/image/url (with local mock server)', () => {
       } else if (req.url?.includes('no-body')) {
         res.statusCode = 204
         res.end()
+      } else if (req.url?.endsWith('.png')) {
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'image/png')
+        res.end(pngBuffer)
+      } else if (req.url?.includes('not-an-image')) {
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'image/jpeg') // lying about the content type on purpose
+        res.end('User-agent: *\nDisallow: /ftp')
       } else {
         res.statusCode = 200
         res.setHeader('Content-Type', 'image/jpeg')
@@ -219,7 +228,7 @@ void describe('/profile/image/url (with local mock server)', () => {
     assert.ok(res.headers.location?.endsWith('/profile'))
   })
 
-  void it('POST with PNG URL extension saves file using PNG extension', async () => {
+  void it('POST with PNG response saves file using PNG extension', async () => {
     await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
@@ -232,7 +241,7 @@ void describe('/profile/image/url (with local mock server)', () => {
     )
   })
 
-  void it('POST with unrecognised URL extension defaults to JPG extension', async () => {
+  void it('POST with URL extension not matching the content uses the detected file type', async () => {
     await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
@@ -243,5 +252,45 @@ void describe('/profile/image/url (with local mock server)', () => {
       fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`),
       `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg to exist`
     )
+  })
+
+  void it('POST with non-image response does not republish the fetched content', async () => {
+    const uploadedFile = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+
+    await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://localhost:${mockPort}/photo.jpg`)
+      .redirects(0)
+
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://localhost:${mockPort}/not-an-image.jpg`)
+      .redirects(0)
+
+    assert.equal(res.status, 302)
+    assert.ok(!fs.readFileSync(uploadedFile).toString('latin1').includes('Disallow: /ftp'))
+  })
+
+  void it('POST with URL resolving to a non-public address is blocked', async () => {
+    const uploadedFile = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+
+    await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://localhost:${mockPort}/photo.jpg`)
+      .redirects(0)
+
+    const previousContent = fs.readFileSync(uploadedFile)
+
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', 'http://169.254.169.254/latest/meta-data/')
+      .redirects(0)
+
+    assert.equal(res.status, 302)
+    assert.deepEqual(fs.readFileSync(uploadedFile), previousContent)
   })
 })
