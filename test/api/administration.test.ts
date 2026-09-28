@@ -38,4 +38,12 @@ void describe('/rest/admin/application-configuration', () => {
     assert.equal(typeof res.body.config, 'object')
     assert.ok(res.body.config !== null)
   })
+
+  void it('GET application configuration does not leak security question answers', async () => {
+    const res = await request(app)
+      .get('/rest/admin/application-configuration')
+
+    assert.equal(res.status, 200)
+    assert.ok(!JSON.stringify(res.body.config).match(/securityAnswer/i))
+  })
 })

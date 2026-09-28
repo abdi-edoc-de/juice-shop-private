@@ -283,6 +283,10 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     }
   })
 
+  /* Diagnostic and key material read surfaces must not be readable anonymously */
+  app.use('/encryptionkeys', security.isAdmin())
+  app.use('/support/logs', security.isAdmin())
+
   // vuln-code-snippet start directoryListingChallenge accessLogDisclosureChallenge
   /* /ftp directory browsing and file download */ // vuln-code-snippet neutral-line directoryListingChallenge
   app.use('/ftp', serveIndexMiddleware, serveIndex('ftp', { icons: true })) // vuln-code-snippet vuln-line directoryListingChallenge
@@ -692,7 +696,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/snippets/fixes', utils.asyncHandler(checkCorrectFix()))
 
   /* Serve metrics before the Angular catch-all so the route is reachable in all environments */
-  app.get('/metrics', utils.asyncHandler(metrics.serveMetrics()))
+  app.get('/metrics', security.isAdmin(), utils.asyncHandler(metrics.serveMetrics()))
 
   app.use(utils.asyncHandler(serveAngularClient()))
 
@@ -742,6 +746,9 @@ while (!expectedModels.every(model => Object.keys(sequelize.models).includes(mod
   logger.info(`Entity models ${colors.bold(Object.keys(sequelize.models).length.toString())} of ${colors.bold(expectedModels.length.toString())} are initialized (${colors.yellow('WAITING')})`)
 }
 logger.info(`Entity models ${colors.bold(Object.keys(sequelize.models).length.toString())} of ${colors.bold(expectedModels.length.toString())} are initialized (${colors.green('SUCCESS')})`)
+
+/* Metrics must not be readable anonymously */
+app.use('/metrics', security.isAdmin())
 
 // vuln-code-snippet start exposedMetricsChallenge
 /* Serve metrics */

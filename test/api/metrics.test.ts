@@ -12,14 +12,22 @@ import fs from 'node:fs'
 import * as Prometheus from 'prom-client'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
+import { login } from './helpers/auth'
 import * as metricsRoute from '../../routes/metrics'
 import { challenges } from '../../data/datacache'
 
 let app: Express
+let adminHeader: { Authorization: string }
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+
+  const { token } = await login(app, {
+    email: 'admin@' + config.get<string>('application.domain'),
+    password: 'admin123'
+  })
+  adminHeader = { Authorization: 'Bearer ' + token }
 
   // createTestApp calls Prometheus.register.clear() before configureApp, so custom metrics
   // are gone. Re-register them and wire up the /metrics route on the test app.
@@ -56,6 +64,7 @@ void describe('/metrics', () => {
 
       await request(app)
         .get('/metrics')
+        .set(adminHeader)
         .set('User-Agent', `${ignoredAgents[0]}/2.45.0`)
 
       assert.equal(challenges.exposedMetricsChallenge.solved, false)
@@ -64,15 +73,24 @@ void describe('/metrics', () => {
     void it('GET with a regular browser user agent solves exposedMetricsChallenge', async () => {
       await request(app)
         .get('/metrics')
+        .set(adminHeader)
         .set('User-Agent', 'Mozilla/5.0 (compatible; browser)')
 
       assert.equal(challenges.exposedMetricsChallenge.solved, true)
     })
   })
 
+  void describe('authorization', () => {
+    void it('GET is forbidden for anonymous users', async () => {
+      const res = await request(app).get('/metrics')
+
+      assert.equal(res.status, 403)
+    })
+  })
+
   void describe('response format', () => {
     void it('GET returns 200 with text/plain content type', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.equal(res.status, 200)
       assert.ok(res.headers['content-type']?.includes('text/plain'))
@@ -81,7 +99,7 @@ void describe('/metrics', () => {
 
   void describe('update loop', { concurrency: 1 }, () => {
     void it('GET includes version info gauge after update loop runs', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(
         res.text,
@@ -90,20 +108,20 @@ void describe('/metrics', () => {
     })
 
     void it('GET includes per-difficulty and per-category challenge solved/total gauges', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^.*_challenges_solved\{difficulty="[1-6]",category=".+",app=".*"\} [0-9]+$/m)
       assert.match(res.text, /^.*_challenges_total\{difficulty="[1-6]",category=".+",app=".*"\} [0-9]+$/m)
     })
 
     void it('GET includes cheat score gauge', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^.*_cheat_score\{app=".*"\} [0-9.]+$/m)
     })
 
     void it('GET includes coding challenge progress gauges for all three phases', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^.*_coding_challenges_progress\{phase="find it",app=".*"\} [0-9]+$/m)
       assert.match(res.text, /^.*_coding_challenges_progress\{phase="fix it",app=".*"\} [0-9]+$/m)
@@ -111,13 +129,13 @@ void describe('/metrics', () => {
     })
 
     void it('GET includes registered user counts from update loop', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^.*_users_registered_total\{app=".*"\} [0-9]+$/m)
     })
 
     void it('GET includes http request counter incremented by the request middleware', async () => {
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^http_requests_count\{status_code="2XX",app=".*"\} [0-9]+$/m)
     })
@@ -132,7 +150,7 @@ void describe('/metrics', () => {
         .attach('file', fs.readFileSync(file), 'validSizeAndTypeForClient.pdf')
         .expect(204)
 
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^file_uploads_count\{file_type=".*",app=".*"\} [0-9]+$/m)
     })
@@ -145,7 +163,7 @@ void describe('/metrics', () => {
         .attach('file', Buffer.from('<?xml version="1.0"?><root/>'), { filename: 'test.xml', contentType: 'application/xml' })
         .expect(410)
 
-      const res = await request(app).get('/metrics')
+      const res = await request(app).get('/metrics').set(adminHeader)
 
       assert.match(res.text, /^file_upload_errors\{file_type=".*",app=".*"\} [0-9]+$/m)
     })

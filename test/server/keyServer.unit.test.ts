@@ -18,13 +18,23 @@ void describe('keyServer', () => {
     next = mock.fn()
   })
 
-  void it('should serve requested file from folder /encryptionkeys', () => {
-    req.params.file = 'test.file'
+  void it('should serve requested public key file from folder /encryptionkeys', () => {
+    req.params.file = 'test.pub'
 
     serveKeyFiles()(req, res, next)
 
     assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /encryptionkeys[/\\]test.file/)
+    assert.match(res.sendFile.mock.calls[0].arguments[0], /encryptionkeys[/\\]test.pub/)
+  })
+
+  void it('should raise error for files with a non-allowlisted extension', () => {
+    req.params.file = 'premium.key'
+
+    serveKeyFiles()(req, res, next)
+
+    assert.equal(res.sendFile.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
   })
 
   void it('should raise error for slashes in filename', () => {
