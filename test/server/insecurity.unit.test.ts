@@ -344,4 +344,58 @@ void describe('insecurity', () => {
       assert.equal(typeof security.denyAll(), 'function')
     })
   })
+
+  void describe('session token cookie', () => {
+    const cookieRecorder = () => {
+      const calls: Array<{ name: string, value?: string, options: any }> = []
+      const res = {
+        cookie: (name: string, value: string, options: any) => { calls.push({ name, value, options }) },
+        clearCookie: (name: string, options: any) => { calls.push({ name, options }) }
+      } as any
+      return { calls, res }
+    }
+
+    void it('is issued with HttpOnly, SameSite and an explicit lifetime', () => {
+      const { calls, res } = cookieRecorder()
+      security.setSessionTokenCookie({ secure: false, headers: {} } as Request, res, 'TOKEN')
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].name, 'token')
+      assert.equal(calls[0].value, 'TOKEN')
+      assert.equal(calls[0].options.httpOnly, true)
+      assert.equal(calls[0].options.sameSite, 'strict')
+      assert.equal(calls[0].options.path, '/')
+      assert.ok(calls[0].options.maxAge > 0)
+    })
+
+    void it('is flagged Secure for requests arriving over TLS', () => {
+      const { calls, res } = cookieRecorder()
+      security.setSessionTokenCookie({ secure: true, headers: {} } as Request, res, 'TOKEN')
+      assert.equal(calls[0].options.secure, true)
+    })
+
+    void it('is flagged Secure for requests forwarded by a TLS-terminating proxy', () => {
+      const { calls, res } = cookieRecorder()
+      security.setSessionTokenCookie({ secure: false, headers: { 'x-forwarded-proto': 'https, http' } } as unknown as Request, res, 'TOKEN')
+      assert.equal(calls[0].options.secure, true)
+    })
+
+    void it('is cleared with the same attributes it was issued with', () => {
+      const { calls, res } = cookieRecorder()
+      security.clearSessionTokenCookie({ secure: true, headers: {} } as Request, res)
+      assert.equal(calls[0].name, 'token')
+      assert.equal(calls[0].options.httpOnly, true)
+      assert.equal(calls[0].options.secure, true)
+      assert.equal(calls[0].options.sameSite, 'strict')
+    })
+
+    void it('is re-issued by updateAuthenticatedUsers when the token only came from the Authorization header', () => {
+      const { calls, res } = cookieRecorder()
+      const token = security.authorize({ data: { id: 42, email: 'test@bla.blubb' } })
+      security.authenticatedUsers.put(token, { data: { id: 42 } as UserModel })
+      const req = { cookies: {}, secure: false, headers: { authorization: `Bearer ${token}` } } as unknown as Request
+      security.updateAuthenticatedUsers()(req, res, () => {})
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].options.httpOnly, true)
+    })
+  })
 })

@@ -46,6 +46,11 @@ export class UserService {
     return this.http.post(this.hostServer + '/rest/user/login', params).pipe(map((response: any) => response.authentication), catchError((err) => { throw err }))
   }
 
+  logout () {
+    /* Asks the server to delete the HttpOnly session cookie, which the client cannot remove itself. */
+    return this.http.post(this.hostServer + '/rest/user/logout', {}).pipe(map((response: any) => response), catchError((err) => { throw err }))
+  }
+
   getLoggedInState () {
     return this.isLoggedIn.asObservable()
   }

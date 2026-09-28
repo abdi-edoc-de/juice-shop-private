@@ -5,7 +5,7 @@
 
 import fs from 'node:fs'
 import crypto from 'node:crypto'
-import { type Request, type Response, type NextFunction } from 'express'
+import { type CookieOptions, type Request, type Response, type NextFunction } from 'express'
 import { type UserModel } from '@juice-shop/models/user'
 import expressJwt from 'express-jwt'
 import jwt from 'jsonwebtoken'
@@ -36,6 +36,39 @@ interface IAuthenticatedUsers {
   tokenOf: (user: UserModel) => string | undefined
   from: (req: Request) => ResponseWithUser | undefined
   updateFrom: (req: Request, user: ResponseWithUser) => any
+}
+
+/* The `token` cookie is the credential the backend actually trusts, so it has to be issued with
+   the full set of protective attributes: not readable from JavaScript (CWE-1004), not transmitted
+   over plaintext connections (CWE-614), not attached to cross-site requests (CWE-1275) and with an
+   explicit lifetime instead of living on as a session cookie. */
+const sessionCookieMaxAge = 6 * 60 * 60 * 1000 // matches the 6h lifetime of the issued JWT
+
+export const isHttpsRequest = (req: Request) => {
+  const forwardedProto = `${req.headers['x-forwarded-proto'] ?? ''}`.split(',')[0].trim().toLowerCase()
+  return req.secure || forwardedProto === 'https'
+}
+
+const useSecureCookies = (req: Request) => {
+  if (process.env.SECURE_COOKIES !== undefined) { // allows forcing `Secure` behind a TLS-terminating proxy
+    return process.env.SECURE_COOKIES !== 'false'
+  }
+  return isHttpsRequest(req)
+}
+
+export const sessionCookieOptions = (req: Request): CookieOptions => ({
+  httpOnly: true,
+  secure: useSecureCookies(req),
+  sameSite: 'strict',
+  path: '/'
+})
+
+export const setSessionTokenCookie = (req: Request, res: Response, token: string) => {
+  res.cookie('token', token, { ...sessionCookieOptions(req), maxAge: sessionCookieMaxAge })
+}
+
+export const clearSessionTokenCookie = (req: Request, res: Response) => {
+  res.clearCookie('token', sessionCookieOptions(req))
 }
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
@@ -185,13 +218,19 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
-    jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
-      if (err === null && decoded?.data !== undefined) {
-        authenticatedUsers.put(token, decoded)
-        res.cookie('token', token)
-      }
-    })
+  if (token) {
+    if (authenticatedUsers.get(token) === undefined) {
+      jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
+        if (err === null && decoded?.data !== undefined) {
+          authenticatedUsers.put(token, decoded)
+          setSessionTokenCookie(req, res, token)
+        }
+      })
+    } else if (utils.unquote(req.cookies.token ?? '') !== token) {
+      /* The token was only presented via the Authorization header, so (re)issue it as a hardened
+         cookie instead of letting the client script set a cookie of its own. */
+      setSessionTokenCookie(req, res, token)
+    }
   }
   next()
 }

@@ -93,8 +93,9 @@ export class SidenavComponent implements OnInit {
 
   logout () {
     this.userService.saveLastLoginIp().subscribe({ next: () => { this.noop() }, error: (err) => { console.log(err) } })
+    this.userService.logout().subscribe({ next: () => { this.noop() }, error: (err) => { console.log(err) } })
     localStorage.removeItem('token')
-    this.cookieService.remove('token')
+    this.cookieService.remove('token') // removes a legacy script-readable cookie, if any is left over
     sessionStorage.removeItem('bid')
     sessionStorage.removeItem('itemTotal')
     sessionStorage.removeItem('guestBasket')

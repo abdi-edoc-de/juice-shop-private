@@ -46,9 +46,8 @@ export class OAuthComponent implements OnInit {
   login (profile: any) {
     this.userService.login({ email: profile.email, password: btoa(profile.email.split('').reverse().join('')), oauth: true }).subscribe({
       next: (authentication) => {
-        const expires = new Date()
-        expires.setHours(expires.getHours() + 8)
-        this.cookieService.put('token', authentication.token, { expires })
+        /* The session cookie is issued by the server as HttpOnly/Secure/SameSite and must not be
+           mirrored into a script-readable cookie here. */
         localStorage.setItem('token', authentication.token)
         sessionStorage.setItem('bid', authentication.bid)
         this.userService.isLoggedIn.next(true)

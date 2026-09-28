@@ -79,11 +79,13 @@ describe('NavbarComponent', () => {
         userService = {
             whoAmI: vi.fn().mockName("UserService.whoAmI"),
             getLoggedInState: vi.fn().mockName("UserService.getLoggedInState"),
-            saveLastLoginIp: vi.fn().mockName("UserService.saveLastLoginIp")
+            saveLastLoginIp: vi.fn().mockName("UserService.saveLastLoginIp"),
+            logout: vi.fn().mockName("UserService.logout")
         }
         userService.whoAmI.mockReturnValue(of({}))
         userService.getLoggedInState.mockReturnValue(of(true))
         userService.saveLastLoginIp.mockReturnValue(of({}))
+        userService.logout.mockReturnValue(of({}))
         userService.isLoggedIn = {
             next: vi.fn().mockName("userService.isLoggedIn.next")
         }
@@ -298,6 +300,11 @@ describe('NavbarComponent', () => {
     it('should remove authentication token from cookies', () => {
         component.logout()
         expect(cookieService.remove).toHaveBeenCalledWith('token')
+    })
+
+    it('should ask the server to delete the HttpOnly session cookie', () => {
+        component.logout()
+        expect(userService.logout).toHaveBeenCalled()
     })
 
     it('should remove basket id from session storage', () => {

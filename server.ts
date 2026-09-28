@@ -66,6 +66,7 @@ import datacreator from './data/datacreator'
 import locales from './data/static/locales.json'
 
 import { login } from './routes/login'
+import { logout } from './routes/logout'
 import * as verify from './routes/verify'
 import * as address from './routes/address'
 import * as metrics from './routes/metrics'
@@ -185,6 +186,16 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Security middleware */
   app.use(helmet.noSniff())
   app.use(helmet.frameguard())
+  /* Tell browsers to stick to HTTPS so the session cookie cannot be downgraded onto a plaintext
+     connection. Only sent on TLS requests, as HSTS is ignored (and pointless) over plain HTTP. */
+  const hsts = helmet.hsts({ maxAge: 31536000, includeSubDomains: true })
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (security.isHttpsRequest(req)) {
+      hsts(req, res, next)
+    } else {
+      next()
+    }
+  })
   // app.use(helmet.xssFilter()); // = no protection from persisted XSS via RESTful API
   app.disable('x-powered-by')
   app.use(featurePolicy({
@@ -613,6 +624,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Custom Restful API */
   app.post('/rest/user/login', login())
+  app.post('/rest/user/logout', logout())
   app.get('/rest/user/change-password', utils.asyncHandler(changePassword()))
   app.post('/rest/user/reset-password', utils.asyncHandler(resetPassword()))
   app.get('/rest/user/security-question', utils.asyncHandler(securityQuestion()))

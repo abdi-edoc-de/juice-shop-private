@@ -100,9 +100,8 @@ export class LoginComponent implements OnInit {
       next: (authentication: any) => {
         const redirectUrl = this.route.snapshot.queryParamMap.get('redirectUrl') ?? '/search'
         localStorage.setItem('token', authentication.token)
-        const expires = new Date()
-        expires.setHours(expires.getHours() + 8)
-        this.cookieService.put('token', authentication.token, { expires })
+        /* The session cookie is issued by the server as HttpOnly/Secure/SameSite and must not be
+           mirrored into a script-readable cookie here. */
         sessionStorage.setItem('bid', authentication.bid)
 
         this.basketService.mergeGuestBasketIntoUserBasket(authentication.bid)
