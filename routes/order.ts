@@ -191,7 +191,8 @@ function calculateApplicableDiscount (basket: BasketModel, req: Request) {
   const discount = security.discountFromCoupon(basket.coupon ?? undefined)
   if (discount) {
     challengeUtils.solveIf(challenges.forgedCouponChallenge, () => { return (discount ?? 0) >= 80 })
-    return discount
+    // defence in depth: never grant more than the maximum discount, even if a coupon slipped through validation
+    return Math.min(discount, security.MAX_COUPON_DISCOUNT)
   } else if (req.body.couponData) {
     const couponData = Buffer.from(req.body.couponData, 'base64').toString().split('-')
     const couponCode = couponData[0]

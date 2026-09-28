@@ -181,8 +181,9 @@ export function chat () {
         execute: async ({ discount }) => {
           challengeUtils.solveIf(challenges.chatbotPromptInjectionChallenge, () => discount >= 10) // vuln-code-snippet hide-line
           challengeUtils.solveIf(challenges.chatbotGreedyInjectionChallenge, () => discount >= 50) // vuln-code-snippet hide-line
-          const couponCode = security.generateCoupon(discount) // vuln-code-snippet vuln-line chatbotPromptInjectionChallenge
-          return { couponCode, discount } // vuln-code-snippet neutral-line chatbotPromptInjectionChallenge
+          const grantedDiscount = Math.min(Math.max(Math.trunc(discount), 0), security.MAX_COUPON_DISCOUNT) // vuln-code-snippet neutral-line chatbotPromptInjectionChallenge
+          const couponCode = security.generateCoupon(grantedDiscount) // vuln-code-snippet vuln-line chatbotPromptInjectionChallenge
+          return { couponCode, discount: grantedDiscount } // vuln-code-snippet neutral-line chatbotPromptInjectionChallenge
         }
       })
     } // vuln-code-snippet end chatbotGreedyInjectionChallenge chatbotPromptInjectionChallenge

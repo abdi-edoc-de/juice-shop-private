@@ -102,7 +102,7 @@ describe('/#/basket', () => {
       })
     })
 
-    describe('challenge "forgedCouponChallenge"', () => {
+    describe('coupon forgery', () => {
       it('should be able to access file /ftp/coupons_2013.md.bak with poison null byte attack', () => {
         cy.request(`${Cypress.config('baseUrl')}/ftp/coupons_2013.md.bak%2500.md`)
       })
@@ -131,23 +131,16 @@ describe('/#/basket', () => {
         })
       })
 
-      it('should be possible to enter a coupon that gives an 80% discount', () => {
+      it('should not be possible to redeem a self-minted coupon', () => {
         cy.window().then(() => {
           window.localStorage.couponPanelExpanded = false
         })
 
         cy.visit('/#/payment/shop')
         cy.get('#collapseCouponElement').click()
-        cy.task<string>('GenerateCoupon', 90).then((coupon: string) => {
-          cy.get('#coupon').type(coupon)
-          cy.get('#applyCouponButton').click()
-        })
-      })
-
-      it('should be possible to place an order with a forged coupon', () => {
-        cy.visit('/#/order-summary')
-        cy.get('#checkoutButton').click()
-        cy.expectChallengeSolved({ challenge: 'Forged Coupon' })
+        cy.get('#coupon').type('q:<Irhz3{H') // z85('SEP26-99') without a server signature
+        cy.get('#applyCouponButton').click()
+        cy.get('.error').should('be.visible')
       })
     })
   })

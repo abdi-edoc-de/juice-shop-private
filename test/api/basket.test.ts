@@ -14,13 +14,17 @@ import { QuantityModel } from '../../models/quantity'
 import { WalletModel } from '../../models/wallet'
 import * as db from '../../data/mongodb'
 import * as security from '../../lib/insecurity'
+import * as utils from '../../lib/utils'
+// @ts-expect-error FIXME no typescript definitions for z85 :(
+import * as z85 from 'z85'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
 
 const validCoupon = security.generateCoupon(15)
 const outdatedCoupon = security.generateCoupon(20, new Date(2001, 0, 1))
-const forgedCoupon = security.generateCoupon(99)
+// coupon a customer could mint offline: correct format and current month, but no valid signature
+const forgedCoupon = z85.encode(utils.toMMMYY(new Date()) + '-99') + '_' + 'f'.repeat(32)
 
 before(
   async () => {
@@ -152,13 +156,11 @@ void describe('/rest/basket/:id/checkout', () => {
     assert.ok(res.body.orderConfirmation !== undefined)
   })
 
-  void it('POST placing an order for a basket with 99% discount is possible', async () => {
+  void it('POST placing an order with a forged 99% discount coupon is not discounted', async () => {
     const couponRes = await request(app)
       .put('/rest/basket/2/coupon/' + encodeURIComponent(forgedCoupon))
       .set(authHeader)
-    assert.equal(couponRes.status, 200)
-    assert.ok(couponRes.headers['content-type']?.includes('application/json'))
-    assert.equal(couponRes.body.discount, 99)
+    assert.equal(couponRes.status, 404)
 
     const res = await request(app).post('/rest/basket/2/checkout').set(authHeader)
     assert.equal(res.status, 200)
@@ -221,6 +223,21 @@ void describe('/rest/basket/:id/coupon/:coupon', () => {
   void it('PUT apply outdated coupon is not accepted', async () => {
     const res = await request(app)
       .put('/rest/basket/1/coupon/' + encodeURIComponent(outdatedCoupon))
+      .set(authHeader)
+    assert.equal(res.status, 404)
+  })
+
+  void it('PUT apply forged coupon without valid signature is not accepted', async () => {
+    const res = await request(app)
+      .put('/rest/basket/1/coupon/' + encodeURIComponent(forgedCoupon))
+      .set(authHeader)
+    assert.equal(res.status, 404)
+  })
+
+  void it('PUT apply coupon with tampered discount is not accepted', async () => {
+    const tampered = z85.encode(utils.toMMMYY(new Date()) + '-99') + validCoupon.slice(validCoupon.lastIndexOf('_'))
+    const res = await request(app)
+      .put('/rest/basket/1/coupon/' + encodeURIComponent(tampered))
       .set(authHeader)
     assert.equal(res.status, 404)
   })

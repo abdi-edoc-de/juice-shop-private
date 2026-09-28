@@ -8,6 +8,7 @@ import z85 from 'z85'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import * as security from '../../lib/insecurity'
+import * as utils from '../../lib/utils'
 import type { UserModel } from '@juice-shop/models/user'
 import type { Request } from 'express'
 
@@ -34,10 +35,17 @@ void describe('insecurity', () => {
   })
 
   void describe('generateCoupon', () => {
-    void it('returns base85-encoded month, year and discount as coupon code', () => {
+    void it('returns base85-encoded month, year and discount plus a signature as coupon code', () => {
       const coupon = security.generateCoupon(20, new Date('1980-01-02'))
-      assert.equal(coupon, 'n<MiifFb4l')
-      assert.equal(z85.decode(coupon).toString(), 'JAN80-20')
+      const [payload, signature] = coupon.split('_')
+      assert.equal(payload, 'n<MiifFb4l')
+      assert.equal(z85.decode(payload).toString(), 'JAN80-20')
+      assert.match(signature, /^[0-9a-f]{32}$/)
+    })
+
+    void it('caps the encoded discount at the maximum allowed discount', () => {
+      const coupon = security.generateCoupon(99, new Date('1980-01-02'))
+      assert.equal(z85.decode(coupon.split('_')[0]).toString(), `JAN80-${security.MAX_COUPON_DISCOUNT}`)
     })
 
     void it('uses current month and year if not specified', () => {
@@ -76,9 +84,28 @@ void describe('insecurity', () => {
       assert.equal(security.discountFromCoupon(z85.encode('SEP14-50')), undefined)
     })
 
+    void it('returns undefined for unsigned coupon code', () => {
+      assert.equal(security.discountFromCoupon(z85.encode(`${utils.toMMMYY(new Date())}-99`)), undefined)
+    })
+
+    void it('returns undefined for coupon code with an invalid signature', () => {
+      const coupon = security.generateCoupon(10)
+      const tampered = coupon.slice(0, coupon.lastIndexOf('_') + 1) + 'f'.repeat(32)
+      assert.equal(security.discountFromCoupon(tampered), undefined)
+    })
+
+    void it('returns undefined for coupon code whose discount was tampered with', () => {
+      const coupon = security.generateCoupon(10)
+      const tampered = z85.encode(`${utils.toMMMYY(new Date())}-99`) + coupon.slice(coupon.lastIndexOf('_'))
+      assert.equal(security.discountFromCoupon(tampered), undefined)
+    })
+
     void it('returns discount from valid coupon code', () => {
       assert.equal(security.discountFromCoupon(security.generateCoupon(10)), 10)
-      assert.equal(security.discountFromCoupon(security.generateCoupon(99)), 99)
+    })
+
+    void it('never returns more than the maximum allowed discount', () => {
+      assert.equal(security.discountFromCoupon(security.generateCoupon(99)), security.MAX_COUPON_DISCOUNT)
     })
   })
 

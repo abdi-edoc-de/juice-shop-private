@@ -94,28 +94,96 @@ export const userEmailFrom = ({ headers }: any) => {
   return headers ? headers['x-user-email'] : undefined
 }
 
+/**
+ * Highest discount percentage a coupon may ever carry. Enforced both when a coupon is
+ * issued and when a submitted coupon is redeemed, so that a leaked or tampered code can
+ * never translate into an unbounded price reduction.
+ */
+export const MAX_COUPON_DISCOUNT = 20
+
+const COUPON_SIGNATURE_SEPARATOR = '_' // not part of the z85 alphabet, so it cannot occur in the encoded payload
+const COUPON_SIGNATURE_LENGTH = 32
+
+/*
+ * Coupons are server-issued tokens: the human-readable payload is z85-encoded (as before) but
+ * additionally authenticated with an HMAC. Without the signing key a client cannot mint a coupon,
+ * so the payload becomes tamper-evident instead of merely obfuscated.
+ *
+ * COUPON_SIGNING_KEY must be set to a long random secret in any real deployment. Without it an
+ * ephemeral key is generated, which keeps coupons unforgeable but invalidates previously issued
+ * coupons whenever the server restarts. The key must never be derived from anything that ships
+ * with the source code, otherwise anyone reading the repository could mint coupons again.
+ */
+const couponSigningKey: Buffer = process.env.COUPON_SIGNING_KEY
+  ? Buffer.from(process.env.COUPON_SIGNING_KEY, 'utf8')
+  : crypto.randomBytes(32)
+
+if (!process.env.COUPON_SIGNING_KEY) {
+  console.warn('COUPON_SIGNING_KEY is not set - coupons are signed with an ephemeral key and stop working after a restart')
+}
+
+const signCouponPayload = (payload: string) => {
+  return crypto.createHmac('sha256', couponSigningKey).update(payload).digest('hex').slice(0, COUPON_SIGNATURE_LENGTH)
+}
+
+const hasValidSignature = (payload: string, signature: string) => {
+  const expected = Buffer.from(signCouponPayload(payload), 'utf8')
+  const actual = Buffer.from(signature, 'utf8')
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
+}
+
+const cappedDiscount = (discount: number) => {
+  if (!Number.isFinite(discount)) {
+    return 0
+  }
+  return Math.min(Math.max(Math.trunc(discount), 0), MAX_COUPON_DISCOUNT)
+}
+
 export const generateCoupon = (discount: number, date = new Date()) => {
-  const coupon = utils.toMMMYY(date) + '-' + discount
-  return z85.encode(coupon)
+  const payload = utils.toMMMYY(date) + '-' + String(cappedDiscount(discount)).padStart(2, '0')
+  return z85.encode(payload) + COUPON_SIGNATURE_SEPARATOR + signCouponPayload(payload)
 }
 
 export const discountFromCoupon = (coupon?: string) => {
   if (!coupon) {
     return undefined
   }
-  const decoded = z85.decode(coupon)
-  if (decoded && (hasValidFormat(decoded.toString()) != null)) {
-    const parts = decoded.toString().split('-')
-    const validity = parts[0]
-    if (utils.toMMMYY(new Date()) === validity) {
-      const discount = parts[1]
-      return parseInt(discount)
-    }
+  const separatorIndex = coupon.lastIndexOf(COUPON_SIGNATURE_SEPARATOR)
+  if (separatorIndex < 1) {
+    return undefined
   }
+  const encodedPayload = coupon.slice(0, separatorIndex)
+  const signature = coupon.slice(separatorIndex + 1)
+
+  let payload: string
+  try {
+    const decoded = z85.decode(encodedPayload)
+    if (!decoded) {
+      return undefined
+    }
+    payload = decoded.toString()
+  } catch {
+    return undefined
+  }
+
+  if (!hasValidFormat(payload) || !hasValidSignature(payload, signature)) {
+    return undefined
+  }
+
+  const [validity, discountPart] = payload.split('-')
+  if (utils.toMMMYY(new Date()) !== validity) {
+    return undefined
+  }
+
+  const discount = parseInt(discountPart, 10)
+  if (!Number.isInteger(discount) || discount <= 0 || discount > MAX_COUPON_DISCOUNT) {
+    return undefined
+  }
+  return discount
 }
 
 function hasValidFormat (coupon: string) {
-  return coupon.match(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[0-9]{2}-[0-9]{2}/)
+  return /^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[0-9]{2}-[0-9]{2}$/.test(coupon)
 }
 
 // vuln-code-snippet start redirectCryptoCurrencyChallenge redirectChallenge
