@@ -31,46 +31,39 @@ describe('/#/search', () => {
 })
 
 describe('/rest/products/search', () => {
-  describe('challenge "unionSqlInjectionChallenge"', () => {
-    it('query param in product search endpoint should be susceptible to UNION SQL injection attacks', () => {
+  describe('SQL injection hardening', () => {
+    it('query param in product search endpoint should not leak user credentials via UNION SQL injection', () => {
       cy.request(
         "/rest/products/search?q=')) union select id,'2','3',email,password,'6','7','8','9' from users--"
       )
-      cy.expectChallengeSolved({ challenge: 'User Credentials' })
+        .its('body')
+        .then((body) => {
+          expect(JSON.stringify(body)).to.not.contain('@juice-sh.op')
+          expect(body.data).to.have.length(0)
+        })
     })
-  })
 
-  describe('challenge "dbSchemaChallenge"', () => {
-    it('query param in product search endpoint should be susceptible to UNION SQL injection attacks', () => {
+    it('query param in product search endpoint should not leak the database schema via UNION SQL injection', () => {
       cy.request(
         "/rest/products/search?q=')) union select sql,'2','3','4','5','6','7','8','9' from sqlite_master--"
       )
-      cy.expectChallengeSolved({ challenge: 'Database Schema' })
-    })
-  })
-
-  describe('challenge "dlpPastebinLeakChallenge"', () => {
-    beforeEach(() => {
-      cy.login({
-        email: 'admin',
-        password: 'admin123'
-      })
+        .its('body')
+        .then((body) => {
+          expect(JSON.stringify(body)).to.not.contain('CREATE TABLE')
+          expect(body.data).to.have.length(0)
+        })
     })
 
-    it('search query should logically reveal the special product', () => {
+    it('query param in product search endpoint should not expose logically deleted products', () => {
       cy.request("/rest/products/search?q='))--")
         .its('body')
         .then((sourceContent) => {
           cy.task<Product>('GetPastebinLeakProduct').then((pastebinLeakProduct: Product) => {
-            let foundProduct = false
-
-            sourceContent.data.forEach((product: Product) => {
-              if (product.name === pastebinLeakProduct.name) {
-                foundProduct = true
-              }
-            })
+            const foundProduct = sourceContent.data.some(
+              (product: Product) => product.name === pastebinLeakProduct.name
+            )
             // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-            expect(foundProduct).to.be.true
+            expect(foundProduct).to.be.false
           })
         })
     })
@@ -82,24 +75,6 @@ describe('/rest/products/search', () => {
         email: 'admin',
         password: 'admin123'
       })
-    })
-
-    it('search query should reveal logically deleted christmas special product on SQL injection attack', () => {
-      cy.request("/rest/products/search?q='))--")
-        .its('body')
-        .then((sourceContent) => {
-          cy.task<Product>('GetChristmasProduct').then((christmasProduct: Product) => {
-            let foundProduct = false
-
-            sourceContent.data.forEach((product: Product) => {
-              if (product.name === christmasProduct.name) {
-                foundProduct = true
-              }
-            })
-            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-            expect(foundProduct).to.be.true
-          })
-        })
     })
 
     it('should be able to place Christmas product into shopping card by id', () => {
