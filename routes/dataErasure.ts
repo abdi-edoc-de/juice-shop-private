@@ -71,6 +71,31 @@ interface DataErasureRequestParams {
   securityAnswer: string
 }
 
+// The `hbs` view engine treats the `layout` local as a filesystem path that it reads
+// and renders around the view. Any request-body field named `layout` must therefore
+// never reach the render context, otherwise a caller can read arbitrary files from
+// the host filesystem. The layout is resolved explicitly (and validated) below instead.
+const stripLayout = (body: DataErasureRequestParams): Record<string, unknown> => {
+  const { layout, ...rest } = body ?? ({} as DataErasureRequestParams)
+  return rest
+}
+
+// Only layouts that stay inside the application's own `views` directory are acceptable.
+// Anything else (traversal sequences, absolute paths, null bytes, non-string input)
+// is rejected instead of being handed to the view engine as a file path.
+const resolveLayoutWithinViews = (layout: unknown): string | null => {
+  if (typeof layout !== 'string' || layout.includes('\0')) {
+    return null
+  }
+  const viewsDir = path.resolve('views')
+  const candidate = path.resolve(viewsDir, layout)
+  const relative = path.relative(viewsDir, candidate)
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null
+  }
+  return candidate
+}
+
 router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>, DataErasureRequestParams>, res: Response, next: NextFunction): void => {
   void (async () => {
     const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
@@ -100,28 +125,29 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
         _logo_: utils.extractFilename(config.get('application.logo'))
       }
 
-      if (req.body.layout && utils.isChallengeEnabled(challenges.lfrChallenge)) {
-        const filePath: string = path.resolve(req.body.layout).toLowerCase()
-        const isForbiddenFile: boolean = (filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys'))
-        if (!isForbiddenFile) {
-          res.render('dataErasureResult', {
-            ...req.body,
-            ...themeVars
-          }, (error, html) => {
-            if (!html || error) {
-              next(new Error(error.message))
-            } else {
-              const sendlfrResponse: string = html.slice(0, 100) + '......'
-              res.send(sendlfrResponse)
-              challengeUtils.solveIf(challenges.lfrChallenge, () => { return true })
-            }
-          })
-        } else {
+      const renderContext = stripLayout(req.body)
+
+      if (req.body?.layout) {
+        const safeLayout = resolveLayoutWithinViews(req.body.layout)
+        if (safeLayout === null) {
           next(new Error('File access not allowed'))
+          return
         }
+        res.render('dataErasureResult', {
+          ...renderContext,
+          ...themeVars,
+          layout: safeLayout
+        }, (error, html) => {
+          if (!html || error) {
+            next(new Error(error ? error.message : 'Rendering failed'))
+          } else {
+            res.send(html)
+            challengeUtils.solveIf(challenges.lfrChallenge, () => { return true })
+          }
+        })
       } else {
         res.render('dataErasureResult', {
-          ...req.body,
+          ...renderContext,
           ...themeVars
         })
       }
