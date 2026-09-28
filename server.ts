@@ -657,11 +657,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/rest/chat', utils.asyncHandler(chat()))
 
   /* Web3 API endpoints */
+  /* Listener endpoints trigger outbound connections to a third-party RPC provider, so they are rate limited */
+  const web3ListenerRateLimit = rateLimit({ windowMs: 5 * 60 * 1000, max: 100, validate: false })
   app.post('/rest/web3/submitKey', utils.asyncHandler(checkKeys()))
   app.get('/rest/web3/nftUnlocked', nftUnlocked())
-  app.get('/rest/web3/nftMintListen', utils.asyncHandler(nftMintListener()))
+  app.get('/rest/web3/nftMintListen', web3ListenerRateLimit, utils.asyncHandler(nftMintListener()))
   app.post('/rest/web3/walletNFTVerify', walletNFTVerify())
-  app.post('/rest/web3/walletExploitAddress', utils.asyncHandler(contractExploitListener()))
+  app.post('/rest/web3/walletExploitAddress', web3ListenerRateLimit, utils.asyncHandler(contractExploitListener()))
 
   /* B2B Order API */
   app.post('/b2b/v2/orders', b2bOrder())
