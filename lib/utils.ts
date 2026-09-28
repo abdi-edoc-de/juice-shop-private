@@ -246,3 +246,32 @@ export function diceCoefficient (s1: string, s2: string, n = 2): number {
 export const asyncHandler = (fn: (req: any, res: any, next: any) => Promise<any> | any) => (req: any, res: any, next: any) => {
   void Promise.resolve(fn(req, res, next)).catch(next)
 }
+
+interface Translatable { __: (text: string, ...args: any[]) => string }
+
+/**
+ * Translates a string that originates from the database.
+ *
+ * The i18n translator interprets its input as a Mustache template, so persisted
+ * text containing `{{...}}` would otherwise be template-evaluated (silently
+ * mangling the stored value) or make the template engine throw, which turns a
+ * single poisoned record into a permanent HTTP 500 on every read of that
+ * record - including collection endpoints that merely list it.
+ *
+ * Therefore text that contains Mustache delimiters is returned verbatim and any
+ * unexpected translation error falls back to the untranslated text.
+ */
+export const translatePersistedText = (translator: Translatable, text: string): string => {
+  if (typeof text !== 'string' || typeof translator?.__ !== 'function') {
+    return text
+  }
+  if (text.includes('{{') || text.includes('}}')) {
+    return text
+  }
+  try {
+    return translator.__(text)
+  } catch (error) {
+    logger.warn(`Could not translate text: ${getErrorMessage(error)}`)
+    return text
+  }
+}

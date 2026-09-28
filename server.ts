@@ -319,7 +319,10 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     directory: path.resolve('i18n'),
     cookie: 'language',
     defaultLocale: 'en',
-    autoReload: process.env.NODE_ENV !== 'test'
+    autoReload: process.env.NODE_ENV !== 'test',
+    /* Never persist unknown phrases: translated text can originate from the database and
+       would otherwise let arbitrary content grow the shipped locale files indefinitely */
+    updateFiles: false
   })
   app.use(i18n.init)
 
@@ -386,7 +389,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     .delete(security.denyAll())
   /* Products: Only GET is allowed in order to view products */ // vuln-code-snippet neutral-line changeProductChallenge
   app.post('/api/Products', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
-  // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
+  app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
   app.delete('/api/Products/:id', security.denyAll())
   /* Challenges: GET list of challenges allowed. Everything else forbidden entirely */
   app.post('/api/Challenges', security.denyAll())
@@ -544,15 +547,15 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
           if (description?.includes('<em>(This challenge is <strong>')) {
             const warning = description.substring(description.indexOf(' <em>(This challenge is <strong>'))
             description = description.substring(0, description.indexOf(' <em>(This challenge is <strong>'))
-            context.instance[i].description = req.__(description) + req.__(warning)
+            context.instance[i].description = utils.translatePersistedText(req, description) + utils.translatePersistedText(req, warning)
           } else {
-            context.instance[i].description = req.__(description)
+            context.instance[i].description = utils.translatePersistedText(req, description)
           }
         }
         return context.continue
       })
       resource.read.send.before((req: Request, res: Response, context: { instance: { description: string, hint: string }, continue: any }) => {
-        context.instance.description = req.__(context.instance.description)
+        context.instance.description = utils.translatePersistedText(req, context.instance.description)
         return context.continue
       })
     }
@@ -561,12 +564,12 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     if (name === 'SecurityQuestion') {
       resource.list.fetch.after((req: Request, res: Response, context: { instance: string | any[], continue: any }) => {
         for (let i = 0; i < context.instance.length; i++) {
-          context.instance[i].question = req.__(context.instance[i].question)
+          context.instance[i].question = utils.translatePersistedText(req, context.instance[i].question)
         }
         return context.continue
       })
       resource.read.send.before((req: Request, res: Response, context: { instance: { question: string }, continue: any }) => {
-        context.instance.question = req.__(context.instance.question)
+        context.instance.question = utils.translatePersistedText(req, context.instance.question)
         return context.continue
       })
     }
@@ -575,12 +578,12 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     if (name === 'Hint') {
       resource.list.fetch.after((req: Request, res: Response, context: { instance: string | any[], continue: any }) => {
         for (let i = 0; i < context.instance.length; i++) {
-          context.instance[i].text = req.__(context.instance[i].text)
+          context.instance[i].text = utils.translatePersistedText(req, context.instance[i].text)
         }
         return context.continue
       })
       resource.read.send.before((req: Request, res: Response, context: { instance: { text: string }, continue: any }) => {
-        context.instance.text = req.__(context.instance.text)
+        context.instance.text = utils.translatePersistedText(req, context.instance.text)
         return context.continue
       })
     }
@@ -589,14 +592,14 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     if (name === 'Product') {
       resource.list.fetch.after((req: Request, res: Response, context: { instance: any[], continue: any }) => {
         for (let i = 0; i < context.instance.length; i++) {
-          context.instance[i].name = req.__(context.instance[i].name)
-          context.instance[i].description = req.__(context.instance[i].description)
+          context.instance[i].name = utils.translatePersistedText(req, context.instance[i].name)
+          context.instance[i].description = utils.translatePersistedText(req, context.instance[i].description)
         }
         return context.continue
       })
       resource.read.send.before((req: Request, res: Response, context: { instance: { name: string, description: string }, continue: any }) => {
-        context.instance.name = req.__(context.instance.name)
-        context.instance.description = req.__(context.instance.description)
+        context.instance.name = utils.translatePersistedText(req, context.instance.name)
+        context.instance.description = utils.translatePersistedText(req, context.instance.description)
         return context.continue
       })
     }

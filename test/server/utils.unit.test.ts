@@ -323,4 +323,27 @@ void describe('utils', () => {
       assert.equal(utils.getErrorMessage({}), '[object Object]')
     })
   })
+
+  void describe('translatePersistedText', () => {
+    const translator = { __: (text: string) => `translated: ${text}` }
+
+    void it('translates plain text from the database', () => {
+      assert.equal(utils.translatePersistedText(translator, 'Apple Juice (1000ml)'), 'translated: Apple Juice (1000ml)')
+    })
+
+    void it('returns text containing Mustache delimiters verbatim', () => {
+      assert.equal(utils.translatePersistedText(translator, 'VERIFY-{{zzz}}-END'), 'VERIFY-{{zzz}}-END')
+      assert.equal(utils.translatePersistedText(translator, 'BROKEN{{#a}}END'), 'BROKEN{{#a}}END')
+    })
+
+    void it('returns untranslated text if the translator throws', () => {
+      const brokenTranslator = { __: (): string => { throw new Error('Unclosed section "a" at 15') } }
+      assert.equal(utils.translatePersistedText(brokenTranslator, 'Apple Juice (1000ml)'), 'Apple Juice (1000ml)')
+    })
+
+    void it('returns input unchanged if it is not a string', () => {
+      assert.equal(utils.translatePersistedText(translator, undefined as unknown as string), undefined)
+      assert.equal(utils.translatePersistedText(translator, null as unknown as string), null)
+    })
+  })
 })
