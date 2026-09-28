@@ -9,6 +9,7 @@ import request from 'supertest'
 import type { Express } from 'express'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
+import { login } from './helpers/auth'
 import type { Product as ProductConfig } from '../../lib/config.schema'
 import { challenges } from '../../data/datacache'
 import * as security from '../../lib/insecurity'
@@ -96,10 +97,38 @@ void describe('/api/Products/:id', () => {
     assert.equal(res.body.message, 'Not Found')
   })
 
-  void it('PUT update existing product is possible due to Missing Function-Level Access Control vulnerability', async () => {
+  void it('PUT update existing product is forbidden for anonymous users', async () => {
     const res = await request(app)
       .put('/api/Products/' + tamperingProductId)
       .set(jsonHeader)
+      .send({
+        price: 0.01
+      })
+    assert.equal(res.status, 403)
+  })
+
+  void it('PUT update existing product is forbidden for customers', async () => {
+    const { token } = await login(app, {
+      email: `jim@${config.get<string>('application.domain')}`,
+      password: 'ncc-1701'
+    })
+    const res = await request(app)
+      .put('/api/Products/' + tamperingProductId)
+      .set({ Authorization: `Bearer ${token}`, ...jsonHeader })
+      .send({
+        price: 0.01
+      })
+    assert.equal(res.status, 403)
+  })
+
+  void it('PUT update existing product is allowed for accounting users', async () => {
+    const { token } = await login(app, {
+      email: `accountant@${config.get<string>('application.domain')}`,
+      password: 'i am an awesome accountant'
+    })
+    const res = await request(app)
+      .put('/api/Products/' + tamperingProductId)
+      .set({ Authorization: `Bearer ${token}`, ...jsonHeader })
       .send({
         description: '<a href="http://kimminich.de" target="_blank">More...</a>'
       })
