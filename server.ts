@@ -79,7 +79,7 @@ import { applyCoupon } from './routes/coupon'
 import dataErasure from './routes/dataErasure'
 import { dataExport } from './routes/dataExport'
 import { chat } from './routes/chat'
-import { retrieveBasket } from './routes/basket'
+import { basketOwnershipCheck, retrieveBasket } from './routes/basket'
 import { searchProducts } from './routes/search'
 import { trackOrder } from './routes/trackOrder'
 import { saveLoginIp } from './routes/saveLoginIp'
@@ -441,8 +441,11 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/api/Users', verify.emptyUserRegistration())
   /* Unauthorized users are not allowed to access B2B API */
   app.use('/b2b/v2', security.isAuthorized())
+  /* BasketItems: Only the owner of the basket an item belongs to may read, update or delete it */
+  app.get('/api/BasketItems/:id', utils.asyncHandler(basketItems.basketItemOwnershipCheck()))
+  app.delete('/api/BasketItems/:id', utils.asyncHandler(basketItems.basketItemOwnershipCheck()))
   /* Check if the quantity is available in stock and limit per user not exceeded, then add item to basket */
-  app.put('/api/BasketItems/:id', security.appendUserId(), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemUpdate()))
+  app.put('/api/BasketItems/:id', security.appendUserId(), utils.asyncHandler(basketItems.basketItemOwnershipCheck()), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemUpdate()))
   app.post('/api/BasketItems', security.appendUserId(), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemAddition()), utils.asyncHandler(basketItems.addBasketItem()))
   /* Accounting users are allowed to check and update quantities */
   app.delete('/api/Quantitys/:id', security.denyAll())
@@ -619,9 +622,9 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.get('/rest/user/whoami', utils.asyncHandler(retrieveLoggedInUser()))
   app.get('/rest/user/authentication-details', utils.asyncHandler(authenticatedUsers()))
   app.get('/rest/products/search', utils.asyncHandler(searchProducts()))
-  app.get('/rest/basket/:id', utils.asyncHandler(retrieveBasket()))
-  app.post('/rest/basket/:id/checkout', placeOrder())
-  app.put('/rest/basket/:id/coupon/:coupon', utils.asyncHandler(applyCoupon()))
+  app.get('/rest/basket/:id', utils.asyncHandler(basketOwnershipCheck()), utils.asyncHandler(retrieveBasket()))
+  app.post('/rest/basket/:id/checkout', utils.asyncHandler(basketOwnershipCheck()), placeOrder())
+  app.put('/rest/basket/:id/coupon/:coupon', utils.asyncHandler(basketOwnershipCheck()), utils.asyncHandler(applyCoupon()))
   app.get('/rest/admin/application-version', utils.asyncHandler(retrieveAppVersion()))
   app.get('/rest/admin/application-configuration', utils.asyncHandler(retrieveAppConfiguration()))
   app.get('/rest/repeat-notification', utils.asyncHandler(repeatNotification()))

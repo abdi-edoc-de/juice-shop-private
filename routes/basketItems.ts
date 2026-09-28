@@ -55,6 +55,35 @@ export function addBasketItem () {
   }
 }
 
+/* Basket items can only be read, updated or deleted by the owner of the basket they belong to */
+export function basketItemOwnershipCheck () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const basketItem = await BasketItemModel.findOne({ where: { id: req.params.id } })
+      if (basketItem === null) { // non-existent items are handled downstream
+        next()
+        return
+      }
+      const isOwnBasket = await security.isOwnBasket(req, basketItem.BasketId)
+      if (!isOwnBasket) {
+        res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
+        return
+      }
+      /* Moving an item into a foreign basket must not be possible either */
+      if (req.body?.BasketId !== undefined) {
+        const isOwnTargetBasket = await security.isOwnBasket(req, req.body.BasketId)
+        if (!isOwnTargetBasket) {
+          res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
+          return
+        }
+      }
+      next()
+    } catch (error) {
+      next(error)
+    }
+  }
+}
+
 export function quantityCheckBeforeBasketItemAddition () {
   return (req: Request, res: Response, next: NextFunction) => {
     void quantityCheck(req, res, next, req.body.ProductId, req.body.quantity).catch((error: Error) => {

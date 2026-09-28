@@ -13,6 +13,7 @@ import jws from 'jws'
 import sanitizeHtmlLib from 'sanitize-html'
 import sanitizeFilenameLib from 'sanitize-filename'
 import * as utils from './utils'
+import { BasketModel } from '../models/basket'
 
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
@@ -181,6 +182,22 @@ export const appendUserId = () => {
       res.status(401).json({ status: 'error', message: utils.getErrorMessage(error) })
     }
   }
+}
+
+/* Verifies that the given basket belongs to the currently authenticated user. The ownership is
+   resolved against the database instead of relying on the (optional) basket id of the JWT, because
+   tokens are re-issued without it whenever the user profile changes. */
+export const isOwnBasket = async (req: Request, basketId?: string | number | null) => {
+  const userId = authenticatedUsers.from(req)?.data?.id
+  if (userId === undefined || basketId === undefined || basketId === null) {
+    return false
+  }
+  const id = Number(basketId)
+  if (!Number.isInteger(id)) {
+    return false
+  }
+  const basket = await BasketModel.findOne({ where: { id, UserId: userId } })
+  return basket !== null
 }
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
