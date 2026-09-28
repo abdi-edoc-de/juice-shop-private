@@ -74,6 +74,7 @@ import { placeOrder } from './routes/order'
 import { b2bOrder } from './routes/b2bOrder'
 import * as delivery from './routes/delivery'
 import * as recycles from './routes/recycles'
+import { restrictHintUpdateToUnlocking } from './routes/hints'
 import * as twoFactorAuth from './routes/2fa'
 import { applyCoupon } from './routes/coupon'
 import dataErasure from './routes/dataErasure'
@@ -391,10 +392,11 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Challenges: GET list of challenges allowed. Everything else forbidden entirely */
   app.post('/api/Challenges', security.denyAll())
   app.use('/api/Challenges/:id', security.denyAll())
-  /* Hints: GET and PUT hints allowed. Everything else forbidden */
+  /* Hints: GET list of hints allowed. PUT only allowed to unlock a hint. Everything else forbidden */
   app.post('/api/Hints', security.denyAll())
   app.route('/api/Hints/:id')
     .get(security.denyAll())
+    .put(restrictHintUpdateToUnlocking())
     .delete(security.denyAll())
   /* Complaints: POST and GET allowed when logged in only */
   app.get('/api/Complaints', security.isAuthorized())
