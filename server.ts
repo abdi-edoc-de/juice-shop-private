@@ -366,6 +366,34 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   }))
   // vuln-code-snippet end resetPasswordMortyChallenge
 
+  /* Anti-automation controls for the credential surface: login, the security
+     question lookup (which doubles as an account existence oracle) and user
+     registration are throttled per client to prevent unbounded credential
+     guessing, account enumeration and mass account creation. */
+  const credentialWindowMs = 5 * 60 * 1000
+  app.use('/rest/user/login', rateLimit({
+    windowMs: credentialWindowMs,
+    limit: 20, // only failed attempts are counted, so regular logins are unaffected
+    skipSuccessfulRequests: true,
+    standardHeaders: true,
+    legacyHeaders: true,
+    validate: false
+  }))
+  app.use('/rest/user/security-question', rateLimit({
+    windowMs: credentialWindowMs,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: true,
+    validate: false
+  }))
+  app.post('/api/Users', rateLimit({
+    windowMs: credentialWindowMs,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: true,
+    validate: false
+  }))
+
   // vuln-code-snippet start changeProductChallenge
   /** Authorization **/
   /* Checks on JWT in Authorization header */ // vuln-code-snippet hide-line
