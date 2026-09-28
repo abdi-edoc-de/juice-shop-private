@@ -74,6 +74,50 @@ void describe('/api/Wallets', () => {
       .send({ balance: 10 })
     assert.equal(res.status, 402)
   })
+
+  void it('PUT charge wallet with amount above the allowed maximum is rejected', async () => {
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: 1000000, paymentId: 2 })
+    assert.equal(res.status, 400)
+    assert.equal(res.body.status, 'error')
+
+    const balanceRes = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(balanceRes.body.data, 210)
+  })
+
+  void it('PUT charge wallet with amount below the allowed minimum is rejected', async () => {
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: 1, paymentId: 2 })
+    assert.equal(res.status, 400)
+  })
+
+  void it('PUT charge wallet with negative amount is rejected', async () => {
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: -100, paymentId: 2 })
+    assert.equal(res.status, 400)
+
+    const balanceRes = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(balanceRes.body.data, 210)
+  })
+
+  void it('PUT charge wallet with non-numeric amount is rejected', async () => {
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: 'lots', paymentId: 2 })
+    assert.equal(res.status, 400)
+  })
+
   void it('GET wallet balance for user without a wallet returns 404', async () => {
     const email = `newuser${Date.now()}@juice-sh.op`
     const userRes = await request(app)
