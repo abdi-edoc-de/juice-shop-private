@@ -15,6 +15,8 @@ import * as utils from '../../lib/utils'
 
 let app: Express
 const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+const adminAuthHeader = { Authorization: `Bearer ${security.authorize({ data: { id: 1, email: 'admin@juice-sh.op', role: security.roles.admin } })}`, 'content-type': 'application/json' }
+const customerAuthHeader = { Authorization: `Bearer ${security.authorize({ data: { id: 42, email: 'customer@juice-sh.op', role: security.roles.customer } })}`, 'content-type': 'application/json' }
 const jsonHeader = { 'content-type': 'application/json' }
 
 before(async () => {
@@ -298,7 +300,34 @@ void describe('/api/Feedbacks/:id', () => {
 
     const res = await request(app)
       .delete('/api/Feedbacks/' + createRes.body.data.id)
-      .set(authHeader)
+      .set(adminAuthHeader)
     assert.equal(res.status, 200)
+  })
+
+  void it('DELETE feedback of another user is forbidden for non-admin users', async () => {
+    const captchaRes = await request(app)
+      .get('/rest/captcha')
+    assert.equal(captchaRes.status, 200)
+
+    const createRes = await request(app)
+      .post('/api/Feedbacks')
+      .set(jsonHeader)
+      .send({
+        comment: 'I will survive!',
+        rating: 1,
+        captchaId: captchaRes.body.captchaId,
+        captcha: captchaRes.body.answer
+      })
+    assert.equal(createRes.status, 201)
+
+    const res = await request(app)
+      .delete('/api/Feedbacks/' + createRes.body.data.id)
+      .set(customerAuthHeader)
+    assert.equal(res.status, 403)
+
+    const stillThere = await request(app)
+      .get('/api/Feedbacks/' + createRes.body.data.id)
+      .set(customerAuthHeader)
+    assert.equal(stillThere.status, 200)
   })
 })

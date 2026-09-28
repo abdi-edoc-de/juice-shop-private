@@ -102,6 +102,7 @@ import * as restoreProgress from './routes/restoreProgress'
 import { checkKeys, nftUnlocked } from './routes/checkKeys'
 import { retrieveLoggedInUser } from './routes/currentUser'
 import authenticatedUsers from './routes/authenticatedUsers'
+import { authorizeFeedbackDeletion } from './routes/deleteFeedback'
 import { securityQuestion } from './routes/securityQuestion'
 import { servePremiumContent } from './routes/premiumReward'
 import { contractExploitListener } from './routes/web3Wallet'
@@ -378,12 +379,18 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/api/BasketItems/:id', security.isAuthorized())
   /* Feedbacks: GET allowed for feedback carousel, POST allowed in order to provide feedback without being logged in */
   app.use('/api/Feedbacks/:id', security.isAuthorized())
+  /* Feedbacks: Deleting arbitrary feedback is admin-only, others may only delete their own */ // vuln-code-snippet hide-line
+  app.delete('/api/Feedbacks/:id', utils.asyncHandler(authorizeFeedbackDeletion())) // vuln-code-snippet hide-line
   /* Users: Only POST is allowed in order to register a new user */
   app.get('/api/Users', security.isAuthorized())
+  /* Users: Listing all users is an admin-only back-office operation */ // vuln-code-snippet hide-line
+  app.get('/api/Users', security.isAdmin()) // vuln-code-snippet hide-line
   app.route('/api/Users/:id')
     .get(security.isAuthorized())
     .put(security.denyAll())
     .delete(security.denyAll())
+  /* Users: Reading a user record is restricted to admins and the user themselves */ // vuln-code-snippet hide-line
+  app.get('/api/Users/:id', security.isAdminOrSelf()) // vuln-code-snippet hide-line
   /* Products: Only GET is allowed in order to view products */ // vuln-code-snippet neutral-line changeProductChallenge
   app.post('/api/Products', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
   // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
@@ -415,6 +422,8 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/api/SecurityAnswers/:id', security.denyAll())
   /* REST API */
   app.use('/rest/user/authentication-details', security.isAuthorized())
+  /* Authentication details of all users are admin-only back-office data */ // vuln-code-snippet hide-line
+  app.use('/rest/user/authentication-details', security.isAdmin()) // vuln-code-snippet hide-line
   app.use('/rest/basket/:id', security.isAuthorized())
   app.use('/rest/basket/:id/order', security.isAuthorized())
   /* Challenge evaluation before finale takes over */ // vuln-code-snippet hide-start

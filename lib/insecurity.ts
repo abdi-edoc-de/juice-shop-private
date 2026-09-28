@@ -162,6 +162,45 @@ export const isAccounting = () => {
   }
 }
 
+export const roleFrom = (req: Request) => {
+  const token = utils.jwtFrom(req)
+  const decodedToken = token && verify(token) ? decode(token) : null
+  return decodedToken?.data?.role
+}
+
+export const userIdFrom = (req: Request) => {
+  const token = utils.jwtFrom(req)
+  const decodedToken = token && verify(token) ? decode(token) : null
+  return decodedToken?.data?.id
+}
+
+export const hasRole = (req: Request, role: string) => roleFrom(req) === role
+
+/* Server-side role predicate for the back-office (admin) operations. Has to be
+   combined with isAuthorized() so that anonymous callers get a 401 instead of a 403. */
+export const isAdmin = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (hasRole(req, roles.admin)) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
+/* Reading a single user record is admin back-office functionality, with the
+   exception of users retrieving their own record. */
+export const isAdminOrSelf = (idParam = 'id') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const userId = userIdFrom(req)
+    if (hasRole(req, roles.admin) || (userId && String(userId) === String(req.params[idParam]))) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
 export const isDeluxe = (req: Request) => {
   const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
   return decodedToken?.data?.role === roles.deluxe && decodedToken?.data?.deluxeToken && decodedToken?.data?.deluxeToken === deluxeToken(decodedToken?.data?.email)
