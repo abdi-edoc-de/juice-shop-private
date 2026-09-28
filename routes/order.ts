@@ -193,18 +193,39 @@ function calculateApplicableDiscount (basket: BasketModel, req: Request) {
     challengeUtils.solveIf(challenges.forgedCouponChallenge, () => { return (discount ?? 0) >= 80 })
     return discount
   } else if (req.body.couponData) {
-    const couponData = Buffer.from(req.body.couponData, 'base64').toString().split('-')
-    const couponCode = couponData[0]
-    const couponDate = Number(couponData[1])
-    const campaign = campaigns[couponCode as keyof typeof campaigns]
-
-    if (campaign && couponDate == campaign.validOn) { // eslint-disable-line eqeqeq
-      challengeUtils.solveIf(challenges.manipulateClockChallenge, () => { return campaign.validOn < new Date().getTime() })
+    const campaign = campaignFromCouponData(req.body.couponData)
+    // The validity of a campaign is determined by the server clock only. Any date
+    // supplied by the client (as part of couponData) is deliberately ignored.
+    if (campaign && isCampaignActive(campaign)) {
       return campaign.discount
     }
   }
   return 0
 }
+
+function campaignFromCouponData (couponData: unknown): Campaign | undefined {
+  if (typeof couponData !== 'string' || couponData.length === 0) {
+    return undefined
+  }
+  const decoded = Buffer.from(couponData, 'base64').toString()
+  const couponCode = decoded.split('-')[0]
+  if (!CAMPAIGN_CODE_PATTERN.test(couponCode) || !Object.prototype.hasOwnProperty.call(campaigns, couponCode)) {
+    return undefined
+  }
+  return campaigns[couponCode as keyof typeof campaigns]
+}
+
+function isCampaignActive (campaign: Campaign, now: number = Date.now()): boolean {
+  return now >= campaign.validOn && now < campaign.validOn + CAMPAIGN_VALIDITY_PERIOD
+}
+
+interface Campaign {
+  validOn: number
+  discount: number
+}
+
+const CAMPAIGN_CODE_PATTERN = /^[A-Z0-9]{10}$/
+const CAMPAIGN_VALIDITY_PERIOD = 24 * 60 * 60 * 1000
 
 const campaigns = {
   WMNSDY2019: { validOn: new Date('Mar 08, 2019 00:00:00 GMT+0100').getTime(), discount: 75 },

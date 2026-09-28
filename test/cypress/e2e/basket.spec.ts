@@ -75,8 +75,9 @@ describe('/#/basket', () => {
     beforeEach(() => {
       cy.login({ email: 'jim', password: 'ncc-1701' })
     })
-    describe('challenge "manipulateClockChallenge"', () => {
-      it('should be possible to enter WMNSDY2019 coupon & place order with this expired coupon', () => {
+    describe('expired campaign coupons', () => {
+      it('should not grant a discount for the expired WMNSDY2019 coupon even with a manipulated client clock', () => {
+        cy.intercept('POST', '/rest/basket/*/checkout').as('checkout')
         cy.window().then(() => {
           window.localStorage.couponPanelExpanded = false
         })
@@ -98,7 +99,13 @@ describe('/#/basket', () => {
         cy.get('.mat-mdc-radio-button').first().click()
         cy.get('.nextButton').click()
         cy.get('#checkoutButton').click()
-        cy.expectChallengeSolved({ challenge: 'Expired Coupon' })
+
+        cy.wait('@checkout').then(({ response }) => {
+          const orderId = response?.body.orderConfirmation
+          cy.request(`${Cypress.config('baseUrl')}/rest/track-order/${orderId}`).then((trackingResponse) => {
+            expect(`${trackingResponse.body.data[0].promotionalAmount}`).to.equal('0')
+          })
+        })
       })
     })
 

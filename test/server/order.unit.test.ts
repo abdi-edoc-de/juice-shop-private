@@ -226,31 +226,70 @@ void describe('order', () => {
     assert.equal(err, error)
   })
 
-  void it('should handle base64 coupon data in calculateApplicableDiscount', async () => {
-    const validOn = new Date('Mar 08, 2019 00:00:00 GMT+0100').getTime()
-    const couponData = Buffer.from(`WMNSDY2019-${validOn}`).toString('base64')
+  const campaignBasket = () => ({
+    id: 1,
+    Products: [{
+      BasketItem: { ProductId: 1, quantity: 1 },
+      price: 100,
+      deluxePrice: 100,
+      name: 'Product 1',
+      id: 1
+    }],
+    update: mock.fn(async () => {}),
+    coupon: null
+  })
+
+  const placeOrderWithCouponData = async (couponData: string) => {
     req.body.couponData = couponData
 
-    const basket = {
-      id: 1,
-      Products: [],
-      update: mock.fn(async () => {}),
-      coupon: null
-    }
-    mock.method(BasketModel, 'findOne', async () => basket)
+    mock.method(BasketModel, 'findOne', async () => campaignBasket())
     mock.method(security.authenticatedUsers, 'from', () => ({ data: { email: 'test@juice-sh.op' } }))
-    mock.method(db.ordersCollection, 'insert', async () => {})
+    mock.method(QuantityModel, 'findOne', async () => ({ quantity: 10 }))
+    mock.method(QuantityModel, 'update', async () => {})
     mock.method(BasketItemModel, 'destroy', async () => {})
     mock.method(WalletModel, 'increment', async () => {})
 
-    const p = new Promise((resolve) => {
-      res.json = (data: any) => { resolve(data) }
+    const p = new Promise<any>((resolve) => {
+      mock.method(db.ordersCollection, 'insert', async (order: any) => { resolve(order) })
     })
 
     placeOrder()(req, res, next)
-    await p
+    return await p
+  }
 
-    assert.ok(true)
+  void it('should not apply the discount of an expired campaign even if the client claims it is valid', async () => {
+    const validOn = new Date('Mar 08, 2019 00:00:00 GMT+0100').getTime()
+    const couponData = Buffer.from(`WMNSDY2019-${validOn}`).toString('base64')
+
+    const order = await placeOrderWithCouponData(couponData)
+
+    assert.equal(order.promotionalAmount, '0')
+    assert.equal(order.totalPrice, 100)
+  })
+
+  void it('should apply the discount of a campaign that is active according to the server clock', async () => {
+    const validOn = new Date('Mar 08, 2019 00:00:00 GMT+0100').getTime()
+    // The client claims a date on which the campaign was already over, the server clock decides.
+    const couponData = Buffer.from(`WMNSDY2019-${validOn + 10 * 24 * 60 * 60 * 1000}`).toString('base64')
+
+    mock.timers.enable({ apis: ['Date'], now: validOn + 60 * 60 * 1000 })
+    try {
+      const order = await placeOrderWithCouponData(couponData)
+
+      assert.equal(order.promotionalAmount, '75.00')
+      assert.equal(order.totalPrice, 25)
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  void it('should ignore coupon data that does not reference a known campaign', async () => {
+    const couponData = Buffer.from('constructor-0').toString('base64')
+
+    const order = await placeOrderWithCouponData(couponData)
+
+    assert.equal(order.promotionalAmount, '0')
+    assert.equal(order.totalPrice, 100)
   })
 
   void it('should call next with error if wallet balance is insufficient', async () => {
