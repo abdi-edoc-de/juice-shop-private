@@ -50,7 +50,7 @@ void describe('/rest/user/data-export', () => {
   })
 
   void it('Export data with empty JSON body but valid token still succeeds without CAPTCHA', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 
     const res = await request(app)
@@ -70,7 +70,7 @@ void describe('/rest/user/data-export', () => {
   })
 
   void it('Export data without use of CAPTCHA', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 
     const res = await request(app)
@@ -87,7 +87,7 @@ void describe('/rest/user/data-export', () => {
   })
 
   void it('Export data when CAPTCHA requested need right answer', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 
     const captchaRes = await request(app)
@@ -107,7 +107,7 @@ void describe('/rest/user/data-export', () => {
   })
 
   void it('Export data using right answer to CAPTCHA', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 
     const captchaRes = await request(app)

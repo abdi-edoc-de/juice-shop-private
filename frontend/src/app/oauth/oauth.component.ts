@@ -24,17 +24,12 @@ export class OAuthComponent implements OnInit {
   private readonly route = inject(ActivatedRoute)
   private readonly ngZone = inject(NgZone)
 
-
   ngOnInit (): void {
+    // The access token is handed over to the server, which verifies it with the identity
+    // provider and only then issues a session. No password is derived on the client.
     this.userService.oauthLogin(this.parseRedirectUrlParams().access_token).subscribe({
-      next: (profile: any) => {
-        const password = btoa(profile.email.split('').reverse().join(''))
-        this.userService.save({ email: profile.email, password, passwordRepeat: password }).subscribe({
-          next: () => {
-            this.login(profile)
-          },
-          error: () => { this.login(profile) }
-        })
+      next: (authentication: any) => {
+        this.establishSession(authentication)
       },
       error: (error) => {
         this.invalidateSession(error)
@@ -43,22 +38,14 @@ export class OAuthComponent implements OnInit {
     })
   }
 
-  login (profile: any) {
-    this.userService.login({ email: profile.email, password: btoa(profile.email.split('').reverse().join('')), oauth: true }).subscribe({
-      next: (authentication) => {
-        const expires = new Date()
-        expires.setHours(expires.getHours() + 8)
-        this.cookieService.put('token', authentication.token, { expires })
-        localStorage.setItem('token', authentication.token)
-        sessionStorage.setItem('bid', authentication.bid)
-        this.userService.isLoggedIn.next(true)
-        this.ngZone.run(async () => await this.router.navigate(['/']))
-      },
-      error: (error) => {
-        this.invalidateSession(error)
-        this.ngZone.run(async () => await this.router.navigate(['/login']))
-      }
-    })
+  establishSession (authentication: any) {
+    const expires = new Date()
+    expires.setHours(expires.getHours() + 8)
+    this.cookieService.put('token', authentication.token, { expires })
+    localStorage.setItem('token', authentication.token)
+    sessionStorage.setItem('bid', authentication.bid)
+    this.userService.isLoggedIn.next(true)
+    this.ngZone.run(async () => await this.router.navigate(['/']))
   }
 
   invalidateSession (error: Error) {

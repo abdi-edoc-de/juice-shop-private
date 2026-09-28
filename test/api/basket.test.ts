@@ -111,7 +111,7 @@ void describe('/rest/basket/:id', () => {
   void it('GET existing basket of another user', async () => {
     const { token } = await login(app, {
       email: 'bjoern.kimminich@gmail.com',
-      password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+      password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj'
     })
     const res = await request(app)
       .get('/rest/basket/2')
@@ -167,7 +167,7 @@ void describe('/rest/basket/:id/checkout', () => {
 
   void describe('error cases', () => {
     void it('should return 500 if QuantityModel.findOne fails during checkout', async (t) => {
-      const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+      const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj' })
       const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
       await request(app).post('/api/BasketItems').set(authHeader).send({ BasketId: 4, ProductId: 1, quantity: 1 })
 

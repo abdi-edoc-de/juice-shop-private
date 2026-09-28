@@ -66,6 +66,7 @@ import datacreator from './data/datacreator'
 import locales from './data/static/locales.json'
 
 import { login } from './routes/login'
+import { oauthLogin } from './routes/oauthLogin'
 import * as verify from './routes/verify'
 import * as address from './routes/address'
 import * as metrics from './routes/metrics'
@@ -365,6 +366,10 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     keyGenerator ({ headers, ip }: { headers: any, ip: any }) { return headers['X-Forwarded-For'] ?? ip } // vuln-code-snippet vuln-line resetPasswordMortyChallenge
   }))
   // vuln-code-snippet end resetPasswordMortyChallenge
+  app.use('/rest/user/oauth-login', rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 100
+  }))
 
   // vuln-code-snippet start changeProductChallenge
   /** Authorization **/
@@ -613,6 +618,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Custom Restful API */
   app.post('/rest/user/login', login())
+  app.post('/rest/user/oauth-login', utils.asyncHandler(oauthLogin()))
   app.get('/rest/user/change-password', utils.asyncHandler(changePassword()))
   app.post('/rest/user/reset-password', utils.asyncHandler(resetPassword()))
   app.get('/rest/user/security-question', utils.asyncHandler(securityQuestion()))

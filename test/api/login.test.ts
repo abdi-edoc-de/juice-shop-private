@@ -144,7 +144,7 @@ void describe('/rest/user/login', () => {
       .set({ 'content-type': 'application/json' })
       .send({
         email: 'bjoern.kimminich@gmail.com',
-        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+        password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj'
       })
 
     assert.equal(res.status, 200)
@@ -235,6 +235,26 @@ void describe('/rest/user/login', () => {
   })
 })
 
+void describe('/rest/user/oauth-login', () => {
+  void it('POST oauth login without access token is rejected', async () => {
+    const res = await request(app)
+      .post('/rest/user/oauth-login')
+      .set({ 'content-type': 'application/json' })
+      .send({})
+
+    assert.equal(res.status, 400)
+  })
+
+  void it('POST oauth login with an access token not issued for this application is rejected', async () => {
+    const res = await request(app)
+      .post('/rest/user/oauth-login')
+      .set({ 'content-type': 'application/json' })
+      .send({ access_token: 'definitely-not-a-valid-google-access-token' })
+
+    assert.equal(res.status, 401)
+  })
+})
+
 void describe('/rest/saveLoginIp', () => {
   void it('GET last login IP will be saved as True-Client-IP header value', async () => {
     const loginRes = await request(app)
@@ -242,7 +262,7 @@ void describe('/rest/saveLoginIp', () => {
       .set({ 'content-type': 'application/json' })
       .send({
         email: 'bjoern.kimminich@gmail.com',
-        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+        password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj'
       })
 
     assert.equal(loginRes.status, 200)
@@ -264,7 +284,7 @@ void describe('/rest/saveLoginIp', () => {
       .set({ 'content-type': 'application/json' })
       .send({
         email: 'bjoern.kimminich@gmail.com',
-        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+        password: 'Zt7wq!R4vLm9#Xk2sPd6@Nhj'
       })
 
     assert.equal(loginRes.status, 200)
