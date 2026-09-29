@@ -343,5 +343,42 @@ void describe('insecurity', () => {
     void it('denyAll returns a middleware', () => {
       assert.equal(typeof security.denyAll(), 'function')
     })
+
+    void it('denyAll rejects even an unsigned token with admin claims', () => {
+      // header {"alg":"none","typ":"JWT"} with an empty signature segment
+      const unsignedToken = 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJkYXRhIjp7ImlkIjoxLCJlbWFpbCI6ImFkbWluQGp1aWNlLXNoLm9wIiwicm9sZSI6ImFkbWluIn0sImlhdCI6MTUwODYzOTYxMiwiZXhwIjo5OTk5OTk5OTk5fQ.'
+      const req = { headers: { authorization: 'Bearer ' + unsignedToken } } as any
+      let statusSet = 0
+      const res = {
+        status: (s: number) => { statusSet = s; return res },
+        json: () => {}
+      } as any
+      security.denyAll()(req, res)
+      assert.equal(statusSet, 401)
+    })
+  })
+
+  void describe('hasAllowedAlgorithm', () => {
+    void it('rejects a missing token', () => {
+      assert.equal(security.hasAllowedAlgorithm(undefined), false)
+      assert.equal(security.hasAllowedAlgorithm(''), false)
+    })
+
+    void it('rejects an unsigned token with empty signature segment', () => {
+      assert.equal(security.hasAllowedAlgorithm('eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJkYXRhIjp7ImVtYWlsIjoiand0bjNkQGp1aWNlLXNoLm9wIn0sImlhdCI6MTUwODYzOTYxMiwiZXhwIjo5OTk5OTk5OTk5fQ.'), false)
+    })
+
+    void it('rejects a token signed with a symmetric algorithm', () => {
+      assert.equal(security.hasAllowedAlgorithm('eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjp7ImVtYWlsIjoicnNhX2xvcmRAanVpY2Utc2gub3AifSwiaWF0IjoxNTgzMDM3NzExfQ.gShXDT5TrE5736mpIbfVDEcQbLfteJaQUG7Z0PH8Xc8'), false)
+    })
+
+    void it('rejects a malformed token', () => {
+      assert.equal(security.hasAllowedAlgorithm('aaa.bbb.ccc'), false)
+      assert.equal(security.hasAllowedAlgorithm('not-a-token'), false)
+    })
+
+    void it('accepts a token with an allowlisted asymmetric algorithm', () => {
+      assert.equal(security.hasAllowedAlgorithm(security.authorize({ data: { id: 1 } })), true)
+    })
   })
 })

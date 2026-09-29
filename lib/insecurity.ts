@@ -49,10 +49,64 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
+// Server-side allowlist of accepted JWT signature algorithms. The pinned
+// express-jwt/jsonwebtoken/jws versions derive the verification algorithm from
+// the (attacker controlled) token header, which makes unsigned `alg:none`
+// tokens and tokens symmetrically signed with the public key pass verification.
+// Every guard therefore has to enforce the expected algorithm itself.
+const allowedJwtAlgorithms = ['RS256']
+
+const unauthorizedError = (message: string, code: string) => ({
+  error: {
+    message,
+    name: 'UnauthorizedError',
+    code,
+    status: 401
+  }
+})
+
+const jwtHeaderOf = (token: string): { alg?: unknown } | undefined => {
+  try {
+    const header: unknown = JSON.parse(Buffer.from(token.split('.')[0], 'base64').toString('utf8'))
+    return (header !== null && typeof header === 'object') ? header as { alg?: unknown } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Rejects unsigned tokens and any token not signed with an allowlisted algorithm. */
+export const hasAllowedAlgorithm = (token?: string) => {
+  if (!token) {
+    return false
+  }
+  const segments = token.split('.')
+  if (segments.length !== 3 || segments[2].length === 0) { // no signature at all, e.g. `alg:none`
+    return false
+  }
+  const alg = jwtHeaderOf(token)?.alg
+  return typeof alg === 'string' && allowedJwtAlgorithms.includes(alg)
+}
+
+const requireAllowedAlgorithm = (guard: (req: Request, res: Response, next: NextFunction) => void) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token && !hasAllowedAlgorithm(token)) {
+      res.status(401).json(unauthorizedError('jwt signature algorithm not allowed', 'invalid_token'))
+      return
+    }
+    guard(req, res, next)
+  }
+}
+
+export const isAuthorized = () => requireAllowedAlgorithm(expressJwt(({ secret: publicKey, algorithms: allowedJwtAlgorithms }) as any) as any)
+export const denyAll = () => {
+  // No principal may ever pass this guard, so no token is inspected at all.
+  return (req: Request, res: Response) => {
+    res.status(401).json(unauthorizedError('Not authorized', 'insufficient_privileges'))
+  }
+}
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+export const verify = (token: string) => hasAllowedAlgorithm(token) ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -185,7 +239,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && hasAllowedAlgorithm(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
