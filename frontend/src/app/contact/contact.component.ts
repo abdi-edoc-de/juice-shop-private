@@ -133,6 +133,8 @@ export class ContactComponent implements OnInit {
     this.captchaControl.markAsUntouched()
     this.captchaControl.markAsPristine()
     this.captchaControl.setValue('')
+    /* CAPTCHAs are single-use and expire server-side, so a fresh challenge is required for the next attempt. */
+    this.getNewCaptcha()
   }
 
   formatRating (value: number) {
