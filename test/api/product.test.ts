@@ -18,6 +18,8 @@ const tamperingProductId = config.get<ProductConfig[]>('products').findIndex((pr
 
 let app: Express
 const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+const adminHeader = { Authorization: 'Bearer ' + security.authorize({ data: { email: 'admin@juice-sh.op', role: security.roles.admin } }), 'content-type': 'application/json' }
+const customerHeader = { Authorization: 'Bearer ' + security.authorize({ data: { email: 'customer@juice-sh.op', role: security.roles.customer } }), 'content-type': 'application/json' }
 const jsonHeader = { 'content-type': 'application/json' }
 
 before(async () => {
@@ -54,11 +56,38 @@ void describe('/api/Products', () => {
     assert.equal(res.status, 401)
   })
 
+  void it('POST new product is forbidden for non-admin users', async () => {
+    const res = await request(app)
+      .post('/api/Products')
+      .set(customerHeader)
+      .send({
+        name: 'Dirt Juice (1000ml)',
+        description: 'Made from ugly dirt.',
+        price: 0.99,
+        image: 'dirt_juice.jpg'
+      })
+    assert.equal(res.status, 403)
+  })
+
+  void it('POST new product is possible for admin users', async () => {
+    const res = await request(app)
+      .post('/api/Products')
+      .set(adminHeader)
+      .send({
+        name: 'Clean Juice (1000ml)',
+        description: 'Made from clean water.',
+        price: 1.99,
+        image: 'clean_juice.jpg'
+      })
+    assert.equal(res.status, 201)
+    assert.equal(res.body.data.name, 'Clean Juice (1000ml)')
+  })
+
   if (utils.isChallengeEnabled(challenges.restfulXssChallenge)) {
     void it('POST new product does not filter XSS attacks', async () => {
       const res = await request(app)
         .post('/api/Products')
-        .set(authHeader)
+        .set(adminHeader)
         .send({
           name: 'XSS Juice (42ml)',
           description: '<iframe src="javascript:alert(`xss`)">',
