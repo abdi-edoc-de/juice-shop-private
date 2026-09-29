@@ -93,6 +93,23 @@ void describe('/api/Quantitys', () => {
 
     assert.equal(res.status, 401)
   })
+
+  void it('GET quantity rejects injected Sequelize query options via nested scope parameter', async () => {
+    const res = await request(app)
+      .get('/api/Quantitys?scope%5Binclude%5D%5Bassociation%5D=Product&scope%5Binclude%5D%5Binclude%5D%5Bassociation%5D=Baskets&scope%5Binclude%5D%5Binclude%5D%5Binclude%5D%5Bassociation%5D=User')
+
+    assert.equal(res.status, 400)
+    assert.equal(res.text.includes('password'), false)
+    assert.equal(res.text.includes('totpSecret'), false)
+  })
+
+  void it('GET quantity rejects scope parameter given as plain string', async () => {
+    const res = await request(app)
+      .get('/api/Quantitys')
+      .query({ scope: '1=1 UNION SELECT name FROM sqlite_master' })
+
+    assert.equal(res.status, 400)
+  })
 })
 
 void describe('/api/Quantitys/:ids', () => {

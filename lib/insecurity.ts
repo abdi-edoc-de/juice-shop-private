@@ -195,3 +195,30 @@ export const updateAuthenticatedUsers = () => (req: Request, res: Response, next
   }
   next()
 }
+
+/**
+ * Blocks attacker-controlled Sequelize query options from reaching the auto-generated
+ * (finale-rest) API endpoints.
+ *
+ * finale-rest hands the `scope` query parameter straight to `Model.scope()`. Because the
+ * Express query parser (qs) turns bracket syntax into nested objects, a caller can supply a
+ * complete `findAll` options object - most importantly `include` - and traverse model
+ * associations to read tables the endpoint is not authorized to expose (e.g. anonymously
+ * reaching `Users` with `password` and `totpSecret` via `/api/Quantitys`).
+ *
+ * None of the models in this application declare named scopes, so the parameter has no
+ * legitimate use and is rejected outright. This also removes the schema/association error
+ * oracle that invalid scope names produced.
+ */
+export const denyQueryOptionsInjection = () => {
+  const forbiddenQueryParams = ['scope']
+  return (req: Request, res: Response, next: NextFunction) => {
+    for (const param of forbiddenQueryParams) {
+      if (Object.prototype.hasOwnProperty.call(req.query, param)) {
+        res.status(400).json({ status: 'error', message: `Unsupported query parameter: ${param}` })
+        return
+      }
+    }
+    next()
+  }
+}

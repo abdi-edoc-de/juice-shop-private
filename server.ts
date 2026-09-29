@@ -495,6 +495,10 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Verifying DB related challenges can be postponed until the next request for challenges is coming via finale */
   app.use(verify.databaseRelatedChallenges())
 
+  /* Reject Sequelize query-option injection (e.g. ?scope[include][association]=...) before
+     the generated endpoints hand the query over to finale-rest / Sequelize */
+  app.use('/api', security.denyQueryOptionsInjection())
+
   // vuln-code-snippet start registerAdminChallenge
   /* Generated API endpoints */
   finale.initialize({ app, sequelize: seq })
