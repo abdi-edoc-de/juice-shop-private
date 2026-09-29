@@ -68,12 +68,11 @@ export class AdministrationComponent implements OnInit {
   findAllUsers () {
     this.userService.find().subscribe({
       next: (users) => {
-        this.userDataSource = users
+        // E-mail addresses are attacker-controlled (anonymous self-registration), so they
+        // must never be marked as trusted HTML. The template renders them as interpolated
+        // text and applies the session-status styling via class bindings instead.
         this.userDataSourceHidden = users
-        for (const user of this.userDataSource) {
-          user.email = this.sanitizer.bypassSecurityTrustHtml(`<span class="${this.doesUserHaveAnActiveSession(user) ? 'confirmation' : 'error'}">${user.email}</span>`)
-        }
-        this.userDataSource = new MatTableDataSource(this.userDataSource)
+        this.userDataSource = new MatTableDataSource(users)
         this.userDataSource.paginator = this.paginatorUsers
         this.resultsLengthUser = users.length
       },
