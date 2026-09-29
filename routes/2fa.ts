@@ -13,6 +13,34 @@ import { challenges } from '../data/datacache'
 import { generateSecret, verifySync } from 'otplib'
 import * as security from '../lib/insecurity'
 
+/**
+ * Resolves the user acting on a 2FA endpoint from the persisted `Users` row.
+ *
+ * The session token signature is verified explicitly and only the user id of
+ * the established server-side session is used to look the account up. Neither
+ * the acting identity nor any credential material is taken from the (client
+ * supplied) token claims, so forged or tampered tokens cannot select a foreign
+ * account or provide the password reference value used for re-authentication.
+ */
+async function currentUserFromDatabase (req: Request) {
+  const token = utils.jwtFrom(req)
+  if (!token || !security.verify(token)) {
+    throw new Error('You need to be logged in to manage 2FA')
+  }
+
+  const session = security.authenticatedUsers.get(token)
+  const userId = session?.data?.id
+  if (userId == null) {
+    throw new Error('You need to be logged in to manage 2FA')
+  }
+
+  const user = await UserModel.findByPk(userId)
+  if (user == null) {
+    throw new Error('No such user found!')
+  }
+  return user
+}
+
 export async function verify (req: Request, res: Response) {
   const { tmpToken, totpToken } = req.body
 
@@ -57,11 +85,7 @@ export async function verify (req: Request, res: Response) {
  */
 export async function status (req: Request, res: Response) {
   try {
-    const data = security.authenticatedUsers.from(req)
-    if (!data) {
-      throw new Error('You need to be logged in to see this')
-    }
-    const { data: user } = data
+    const user = await currentUserFromDatabase(req)
 
     if (user.totpSecret === '') {
       const secret = generateSecret()
@@ -96,11 +120,7 @@ export async function status (req: Request, res: Response) {
  */
 export async function setup (req: Request, res: Response) {
   try {
-    const data = security.authenticatedUsers.from(req)
-    if (!data) {
-      throw new Error('Need to login before setting up 2FA')
-    }
-    const { data: user } = data
+    const user = await currentUserFromDatabase(req)
 
     const { password, setupToken, initialToken } = req.body
 
@@ -121,14 +141,9 @@ export async function setup (req: Request, res: Response) {
     }
 
     // Update db model and cached object
-    const userModel = await UserModel.findByPk(user.id)
-    if (userModel == null) {
-      throw new Error('No such user found!')
-    }
-
-    userModel.totpSecret = secret
-    await userModel.save()
-    security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(userModel))
+    user.totpSecret = secret
+    await user.save()
+    security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(user))
 
     res.status(200).send()
   } catch (error) {
@@ -141,11 +156,7 @@ export async function setup (req: Request, res: Response) {
  */
 export async function disable (req: Request, res: Response) {
   try {
-    const data = security.authenticatedUsers.from(req)
-    if (!data) {
-      throw new Error('Need to login before setting up 2FA')
-    }
-    const { data: user } = data
+    const user = await currentUserFromDatabase(req)
 
     const { password } = req.body
 
@@ -154,14 +165,9 @@ export async function disable (req: Request, res: Response) {
     }
 
     // Update db model and cached object
-    const userModel = await UserModel.findByPk(user.id)
-    if (userModel == null) {
-      throw new Error('No such user found!')
-    }
-
-    userModel.totpSecret = ''
-    await userModel.save()
-    security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(userModel))
+    user.totpSecret = ''
+    await user.save()
+    security.authenticatedUsers.updateFrom(req, utils.queryResultToJson(user))
 
     res.status(200).send()
   } catch (error) {

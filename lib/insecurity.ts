@@ -52,7 +52,32 @@ export const cutOffPoisonNullByte = (str: string) => {
 export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+
+export const expectedTokenAlgorithm = 'RS256'
+
+/**
+ * Verifies the signature of a JWT that was issued by {@link authorize}.
+ *
+ * The accepted algorithm is pinned to the one the server signs with instead of
+ * being derived from the client-supplied token header. Without that pin a token
+ * declaring `"alg": "none"` together with an empty signature would be treated
+ * as authentic, allowing anyone to author arbitrary claims (identity, role,
+ * password hash) without access to any key material.
+ */
+export const verify = (token: string) => {
+  if (!token) {
+    return false
+  }
+  try {
+    if (jws.decode(token)?.header?.alg !== expectedTokenAlgorithm) {
+      return false
+    }
+    return (jws.verify as unknown as ((token: string, secret: string) => boolean))(token, publicKey)
+  } catch {
+    return false
+  }
+}
+
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
