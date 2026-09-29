@@ -320,7 +320,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     directory: path.resolve('i18n'),
     cookie: 'language',
     defaultLocale: 'en',
-    autoReload: process.env.NODE_ENV !== 'test'
+    autoReload: process.env.NODE_ENV !== 'test',
+    /* Never write unknown strings back into the catalogue files: user-controllable
+       content passing through the translator would otherwise be persisted as new
+       keys, growing the i18n files unboundedly and skewing the translation
+       completeness figures reported by GET /rest/languages */
+    updateFiles: false,
+    syncFiles: false
   })
   app.use(i18n.init)
 
