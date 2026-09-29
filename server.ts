@@ -517,6 +517,37 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     { name: 'Hint', exclude: [], model: HintModel }
   ]
 
+  // vuln-code-snippet hide-start
+  /* Query-option allowlist for the generated endpoints: Express' extended query parser turns
+     bracket syntax like `?scope[include][attributes][0]=password` into a nested object, which
+     finale would hand to `Model.scope()` verbatim. That allows callers to inject arbitrary
+     Sequelize `findAll` options (include, attributes, where, required, order, group), traverse
+     associations the endpoint never exposes and thereby defeat the `excludeAttributes` output
+     projection that shields credential columns. Only scope names that are explicitly declared
+     on the respective model are accepted, everything else is rejected. */
+  const declaredScopesPerEndpoint = new Map<string, Set<string>>(
+    autoModels.map(({ name, model }): [string, Set<string>] => [
+      `${name}s`.toLowerCase(),
+      new Set(Object.keys((model as unknown as { options?: { scopes?: Record<string, unknown> } }).options?.scopes ?? {}))
+    ])
+  )
+
+  app.use('/api/:resource', (req: Request, res: Response, next: NextFunction) => {
+    const allowedScopes = declaredScopesPerEndpoint.get(req.params.resource.toLowerCase())
+    if (allowedScopes === undefined || req.query.scope === undefined) {
+      next()
+      return
+    }
+    const requestedScopes: unknown[] = Array.isArray(req.query.scope) ? req.query.scope : [req.query.scope]
+    const allScopesAllowed = requestedScopes.every((scope) => typeof scope === 'string' && allowedScopes.has(scope))
+    if (!allScopesAllowed) {
+      res.status(400).json({ error: 'Unsupported scope' })
+      return
+    }
+    next()
+  })
+  // vuln-code-snippet hide-end
+
   for (const { name, exclude, model, include } of autoModels) {
     const resource = finale.resource({
       model,
