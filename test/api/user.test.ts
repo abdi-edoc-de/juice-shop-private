@@ -43,6 +43,23 @@ void describe('/api/Users', () => {
     }
   })
 
+  void it('GET all users rejects injected Sequelize query options', async () => {
+    const res = await request(app)
+      .get('/api/Users?scope[attributes][0]=id&scope[attributes][1]=password&scope[attributes][2]=totpSecret')
+      .set(authHeader)
+    assert.equal(res.status, 400)
+  })
+
+  void it('GET all users rejects injected scope filter criteria', async () => {
+    const res = await request(app).get('/api/Users?scope[where][role]=admin').set(authHeader)
+    assert.equal(res.status, 400)
+  })
+
+  void it('GET all users rejects injected order identifiers', async () => {
+    const res = await request(app).get('/api/Users?scope[order][0][0]=nosuchcolumn').set(authHeader)
+    assert.equal(res.status, 400)
+  })
+
   void it('POST new user', async () => {
     const res = await request(app)
       .post('/api/Users')

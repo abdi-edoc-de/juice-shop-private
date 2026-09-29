@@ -496,6 +496,9 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Verifying DB related challenges can be postponed until the next request for challenges is coming via finale */
   app.use(verify.databaseRelatedChallenges())
 
+  /* Callers must not be able to hand Sequelize query options (e.g. ?scope[...]) to the generated API endpoints */
+  app.use('/api', security.denyQueryOptionInjection())
+
   // vuln-code-snippet start registerAdminChallenge
   /* Generated API endpoints */
   finale.initialize({ app, sequelize: seq })
@@ -525,6 +528,21 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
       pagination: false,
       include
     })
+
+    /* Never let excluded attributes leave the API, no matter which query options were used to fetch them */
+    if (exclude.length > 0) {
+      resource.all.send.before((req: Request, res: Response, context: { instance: any, continue: any }) => {
+        const instances = Array.isArray(context.instance) ? context.instance : [context.instance]
+        for (const instance of instances) {
+          if (instance === null || typeof instance !== 'object') continue
+          for (const attribute of exclude) {
+            if (instance.dataValues !== undefined) delete instance.dataValues[attribute]
+            delete instance[attribute]
+          }
+        }
+        return context.continue
+      })
+    }
 
     // create a wallet when a new user is registered using API
     if (name === 'User') { // vuln-code-snippet neutral-line registerAdminChallenge

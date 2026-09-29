@@ -183,6 +183,25 @@ export const appendUserId = () => {
   }
 }
 
+/* Sequelize query options that must never be supplied by a caller of the
+   auto-generated API endpoints. Accepting any of them turns the request into an
+   arbitrary `findAll` options object, which bypasses the configured output
+   projection (`excludeAttributes`, e.g. the password and TOTP secret columns of
+   users), allows arbitrary server-side filtering, injects attacker-controlled
+   identifiers into ORDER BY / GROUP BY clauses and traverses associations. */
+const forbiddenQueryOptions = ['scope', 'attributes', 'include', 'group', 'having', 'paranoid']
+
+export const denyQueryOptionInjection = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const injectedOptions = Object.keys(req.query).filter((parameter) => forbiddenQueryOptions.includes(parameter.toLowerCase()))
+    if (injectedOptions.length > 0) {
+      res.status(400).json({ status: 'error', message: `Unsupported query parameter: ${injectedOptions.join(', ')}` })
+      return
+    }
+    next()
+  }
+}
+
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
