@@ -6,6 +6,7 @@
 import { type Request, type Response, type NextFunction } from 'express'
 import { BasketItemModel } from '../models/basketitem'
 import { QuantityModel } from '../models/quantity'
+import { ProductModel } from '../models/product'
 import * as challengeUtils from '../lib/challengeUtils'
 
 import * as utils from '../lib/utils'
@@ -83,6 +84,14 @@ export function quantityCheckBeforeBasketItemUpdate () {
 }
 
 async function quantityCheck (req: Request, res: Response, next: NextFunction, id: number, quantity: number) {
+  // Products withdrawn from sale are soft-deleted (deletedAt). The paranoid ProductModel
+  // excludes them, so this also stops de-listed items from being purchased through a
+  // directly supplied/guessed ProductId instead of only hiding them from the catalogue.
+  const sellableProduct = await ProductModel.findOne({ where: { id } })
+  if (sellableProduct == null) {
+    throw new Error('No such product found!')
+  }
+
   const product = await QuantityModel.findOne({ where: { ProductId: id } })
   if (product == null) {
     throw new Error('No such product found!')
