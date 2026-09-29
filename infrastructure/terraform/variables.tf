@@ -69,3 +69,9 @@ variable "efs_encrypted" {
   type        = bool
   default     = true
 }
+
+variable "tls_private_key" {
+  description = "PEM encoded private key for the load balancer TLS certificate, supplied at apply time from a secret store"
+  type        = string
+  sensitive   = true
+}

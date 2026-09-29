@@ -31,9 +31,21 @@ export function allOrders () {
 
 export function toggleDeliveryStatus () {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id
+    if (typeof id !== 'string' || id.length === 0) {
+      res.status(400).json({ error: 'Invalid order id' })
+      return
+    }
+    /* Resolve the order first so that a write against an unknown id is reported
+       as such instead of being answered with a meaningless success response. */
+    const order = await ordersCollection.findOne({ _id: id })
+    if (!order) {
+      res.status(404).json({ error: 'Order not found' })
+      return
+    }
     const deliveryStatus = !req.body.deliveryStatus
     const eta = deliveryStatus ? '0' : '1'
-    await ordersCollection.update({ _id: req.params.id }, { $set: { delivered: deliveryStatus, eta } })
+    await ordersCollection.update({ _id: id }, { $set: { delivered: deliveryStatus, eta } })
     res.status(200).json({ status: 'success' })
   }
 }

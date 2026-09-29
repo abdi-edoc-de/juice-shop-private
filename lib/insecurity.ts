@@ -146,6 +146,21 @@ export const roles = {
   admin: 'admin'
 }
 
+/* User attributes that decide authorization or account state and therefore must
+   only ever be set server-side, never through a client-supplied request body. */
+export const protectedUserAttributes = [
+  'id',
+  'role',
+  'deluxeToken',
+  'isActive',
+  'totpSecret',
+  'lastLoginIp',
+  'profileImage',
+  'createdAt',
+  'updatedAt',
+  'deletedAt'
+]
+
 export const deluxeToken = (email: string) => {
   const hmac = crypto.createHmac('sha256', privateKey)
   return hmac.update(email + roles.deluxe).digest('hex')

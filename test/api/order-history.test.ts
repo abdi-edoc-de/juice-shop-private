@@ -125,11 +125,31 @@ void describe('/rest/order-history/:id/delivery-status', () => {
       password: 'i am an awesome accountant'
     })
 
+    const orders = await request(app)
+      .get('/rest/order-history/orders')
+      .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
+    assert.equal(orders.status, 200)
+    const orderId = orders.body.data[0]._id
+
     const res = await request(app)
-      .put('/rest/order-history/1/delivery-status')
+      .put(`/rest/order-history/${orderId}/delivery-status`)
       .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
       .send({ delivered: false })
 
     assert.equal(res.status, 200)
+  })
+
+  void it('PUT delivery status of an unknown order is not reported as success', async () => {
+    const { token } = await login(app, {
+      email: 'accountant@' + config.get<string>('application.domain'),
+      password: 'i am an awesome accountant'
+    })
+
+    const res = await request(app)
+      .put('/rest/order-history/thisOrderDoesNotExist/delivery-status')
+      .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
+      .send({ delivered: false })
+
+    assert.equal(res.status, 404)
   })
 })
