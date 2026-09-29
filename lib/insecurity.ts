@@ -38,6 +38,13 @@ interface IAuthenticatedUsers {
   updateFrom: (req: Request, user: ResponseWithUser) => any
 }
 
+/* Secret used to sign the deluxe membership entitlement receipts. It MUST NOT be
+   the JWT signing key (or any other key that is published or otherwise readable
+   by clients), because anybody who knows it can mint a valid receipt for an
+   arbitrary email address offline. A fresh random secret is generated per
+   process when none is configured via the environment. */
+const deluxeTokenSecret = process.env.DELUXE_TOKEN_SECRET ?? crypto.randomBytes(32).toString('hex')
+
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
 export const hmac = (data: string) => crypto.createHmac('sha256', 'pa4qacea4VK9t9nGv7yZtwmj').update(data).digest('hex')
 
@@ -147,7 +154,7 @@ export const roles = {
 }
 
 export const deluxeToken = (email: string) => {
-  const hmac = crypto.createHmac('sha256', privateKey)
+  const hmac = crypto.createHmac('sha256', deluxeTokenSecret)
   return hmac.update(email + roles.deluxe).digest('hex')
 }
 
@@ -170,6 +177,31 @@ export const isDeluxe = (req: Request) => {
 export const isCustomer = (req: Request) => {
   const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
   return decodedToken?.data?.role === roles.customer
+}
+
+/* Attributes an anonymous caller is allowed to provide when registering. Everything
+   else (e.g. id, role, deluxeToken, isActive, profileImage, totpSecret, lastLoginIp)
+   is internal state and must never be mass-assignable through the public API. */
+const userRegistrationAttributes = new Set([
+  'username',
+  'email',
+  'password',
+  'passwordRepeat',
+  'securityQuestion',
+  'securityAnswer'
+])
+
+export const restrictUserRegistrationAttributes = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+      for (const attribute of Object.keys(req.body)) {
+        if (!userRegistrationAttributes.has(attribute)) {
+          delete req.body[attribute]
+        }
+      }
+    }
+    next()
+  }
 }
 
 export const appendUserId = () => {

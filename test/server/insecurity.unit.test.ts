@@ -205,8 +205,59 @@ void describe('insecurity', () => {
   })
 
   void describe('deluxeToken', () => {
-    void it('returns SHA-256 HMAC with private key as salt for email and deluxe role', () => {
-      assert.equal(security.deluxeToken('test@juice-sh.op'), '91e2b6493fda679d95ae05ac0d1cdce82c2ad4f7b518202a3ed54732531bc7e1')
+    void it('returns a stable SHA-256 HMAC for email and deluxe role', () => {
+      assert.match(security.deluxeToken('test@juice-sh.op'), /^[0-9a-f]{64}$/)
+      assert.equal(security.deluxeToken('test@juice-sh.op'), security.deluxeToken('test@juice-sh.op'))
+    })
+
+    void it('returns a different HMAC for a different email', () => {
+      assert.notEqual(security.deluxeToken('test@juice-sh.op'), security.deluxeToken('other@juice-sh.op'))
+    })
+
+    void it('is not derived from the JWT signing key', () => {
+      assert.notEqual(security.deluxeToken('test@juice-sh.op'), '91e2b6493fda679d95ae05ac0d1cdce82c2ad4f7b518202a3ed54732531bc7e1')
+    })
+  })
+
+  void describe('restrictUserRegistrationAttributes', () => {
+    const filter = (body: any) => {
+      const req = { body } as unknown as Request
+      let nextCalled = false
+      security.restrictUserRegistrationAttributes()(req, {} as any, () => { nextCalled = true })
+      assert.equal(nextCalled, true)
+      return req.body
+    }
+
+    void it('keeps the attributes a registration is allowed to provide', () => {
+      const body = filter({
+        username: 'horst',
+        email: 'horst@horstma.nn',
+        password: 'hooooorst',
+        passwordRepeat: 'hooooorst',
+        securityQuestion: { id: 1 },
+        securityAnswer: 'Horst'
+      })
+      assert.deepEqual(Object.keys(body).sort(), ['email', 'password', 'passwordRepeat', 'securityAnswer', 'securityQuestion', 'username'])
+    })
+
+    void it('removes privileged and internal attributes', () => {
+      const body = filter({
+        email: 'horst@horstma.nn',
+        password: 'hooooorst',
+        id: 1,
+        role: 'admin',
+        deluxeToken: 'forged',
+        isActive: false,
+        profileImage: '/assets/public/images/uploads/defaultAdmin.png',
+        totpSecret: 'secret',
+        lastLoginIp: '1.2.3.4'
+      })
+      assert.deepEqual(body, { email: 'horst@horstma.nn', password: 'hooooorst' })
+    })
+
+    void it('tolerates a missing or non-object body', () => {
+      assert.equal(filter(undefined), undefined)
+      assert.deepEqual(filter([{ role: 'admin' }]), [{ role: 'admin' }])
     })
   })
 
