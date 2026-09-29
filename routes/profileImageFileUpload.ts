@@ -10,6 +10,7 @@ import fileType from 'file-type'
 import logger from '../lib/logger'
 import { UserModel } from '../models/user'
 import * as security from '../lib/insecurity'
+import { resolveProfileImagePath } from '../lib/profileImagePath'
 
 export function profileImageFileUpload () {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -37,7 +38,11 @@ export function profileImageFileUpload () {
       return
     }
 
-    const filePath = `frontend/dist/frontend/assets/public/images/uploads/${loggedInUser.data.id}.${uploadedFileType.ext}`
+    const filePath = resolveProfileImagePath(loggedInUser.data.id, uploadedFileType.ext)
+    if (filePath === null) { // user id from the token cannot be used as a file name safely
+      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+      return
+    }
     try {
       await fs.writeFile(filePath, buffer)
     } catch (err) {
@@ -47,7 +52,7 @@ export function profileImageFileUpload () {
     try {
       const user = await UserModel.findByPk(loggedInUser.data.id)
       if (user != null) {
-        await user.update({ profileImage: `assets/public/images/uploads/${loggedInUser.data.id}.${uploadedFileType.ext}` })
+        await user.update({ profileImage: `assets/public/images/uploads/${String(loggedInUser.data.id)}.${uploadedFileType.ext}` })
       }
     } catch (error) {
       next(error)
