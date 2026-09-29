@@ -5,6 +5,7 @@
 
 import { type Request, type Response, type NextFunction } from 'express'
 import { BasketItemModel } from '../models/basketitem'
+import { BasketModel } from '../models/basket'
 import { QuantityModel } from '../models/quantity'
 import * as challengeUtils from '../lib/challengeUtils'
 
@@ -14,6 +15,13 @@ import * as security from '../lib/insecurity'
 
 interface RequestWithRawBody extends Request {
   rawBody: string
+}
+
+/* Resolves the owner of a basket from server-side state, so basket ownership never depends on
+   claims (like `bid`) taken from the presented token. */
+const isOwnBasket = async (basketId: number, userId: number) => {
+  const basket = await BasketModel.findOne({ where: { id: basketId } })
+  return basket != null && Number(basket.UserId) === Number(userId)
 }
 
 export function addBasketItem () {
@@ -34,23 +42,38 @@ export function addBasketItem () {
     }
 
     const user = security.authenticatedUsers.from(req)
-    if (user && basketIds[0] && basketIds[0] !== 'undefined' && Number(user.bid) != Number(basketIds[0])) { // eslint-disable-line eqeqeq
-      res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
-    } else {
-      const basketItem = {
-        ProductId: productIds[productIds.length - 1],
-        BasketId: basketIds[basketIds.length - 1],
-        quantity: quantities[quantities.length - 1]
-      }
-      challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && basketItem.BasketId && basketItem.BasketId !== 'undefined' && user.bid != basketItem.BasketId }) // eslint-disable-line eqeqeq
+    if (!user?.data?.id) {
+      res.status(401).send('{\'error\' : \'Unauthorized\'}')
+      return
+    }
 
-      const basketItemInstance = BasketItemModel.build(basketItem)
-      try {
-        const addedBasketItem = await basketItemInstance.save()
-        res.json({ status: 'success', data: addedBasketItem })
-      } catch (error) {
-        next(error)
+    /* The very same basket id is used for the ownership check and for the persisted item, so a
+       repeated key in the request body cannot smuggle a different basket past the check. */
+    const submittedBasketId = basketIds[basketIds.length - 1]
+    const hasBasketId = submittedBasketId !== undefined && submittedBasketId !== null && submittedBasketId !== 'undefined'
+    let basketId: number | undefined
+    if (hasBasketId) {
+      basketId = Number(submittedBasketId)
+      const ownsBasket = Number.isInteger(basketId) && await isOwnBasket(basketId, user.data.id)
+      challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return !ownsBasket })
+      if (!ownsBasket) {
+        res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
+        return
       }
+    }
+
+    const basketItem = {
+      ProductId: productIds[productIds.length - 1],
+      BasketId: basketId as number,
+      quantity: quantities[quantities.length - 1]
+    }
+
+    const basketItemInstance = BasketItemModel.build(basketItem)
+    try {
+      const addedBasketItem = await basketItemInstance.save()
+      res.json({ status: 'success', data: addedBasketItem })
+    } catch (error) {
+      next(error)
     }
   }
 }
