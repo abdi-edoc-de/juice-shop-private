@@ -320,7 +320,12 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     directory: path.resolve('i18n'),
     cookie: 'language',
     defaultLocale: 'en',
-    autoReload: process.env.NODE_ENV !== 'test'
+    autoReload: process.env.NODE_ENV !== 'test',
+    /* Never let a request create or rewrite translation catalogues on disk. Without this,
+       an unknown locale makes i18n persist a JSON file to `<directory>/<locale>.json`,
+       turning any request-controlled locale value into an arbitrary file write. */
+    updateFiles: false,
+    syncFiles: false
   })
   app.use(i18n.init)
 
@@ -329,7 +334,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/file-upload', uploadToMemory.single('file'), ensureFileIsPassed, metrics.observeFileUploadMetricsMiddleware(), checkUploadSize, checkFileType, handleZipFileUpload, handleXmlUpload, handleYamlUpload)
   app.post('/profile/image/file', uploadToMemory.single('file'), ensureFileIsPassed, metrics.observeFileUploadMetricsMiddleware(), utils.asyncHandler(profileImageFileUpload()))
   app.post('/profile/image/url', uploadToMemory.single('file'), utils.asyncHandler(profileImageUrlUpload()))
-  app.post('/rest/memories', uploadToDisk.single('image'), ensureFileIsPassed, security.appendUserId(), metrics.observeFileUploadMetricsMiddleware(), utils.asyncHandler(addMemory()))
+  app.post('/rest/memories', uploadToDisk.single('image'), ensureFileIsPassed, ensureFileIsImage, security.appendUserId(), metrics.observeFileUploadMetricsMiddleware(), utils.asyncHandler(addMemory()))
 
   app.use(bodyParser.text({ type: '*/*' }))
   app.use(function jsonParser (req: Request, res: Response, next: NextFunction) {
@@ -718,6 +723,54 @@ const mimeTypeMap: any = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg'
 }
+/* Magic bytes of the image formats accepted for uploads. The client-declared multipart
+   MIME type is attacker-controlled, so the persisted bytes have to be checked as well. */
+const imageFileSignatures: Record<string, number[][] | undefined> = {
+  png: [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
+  jpg: [[0xff, 0xd8, 0xff]]
+}
+
+function hasImageSignature (filePath: string, extension: string) {
+  const signatures = imageFileSignatures[extension]
+  if (!signatures) {
+    return false
+  }
+  const header = Buffer.alloc(8)
+  let fileDescriptor: number | undefined
+  try {
+    fileDescriptor = fs.openSync(filePath, 'r')
+    fs.readSync(fileDescriptor, header, 0, header.length, 0)
+  } catch {
+    return false
+  } finally {
+    if (fileDescriptor !== undefined) {
+      fs.closeSync(fileDescriptor)
+    }
+  }
+  return signatures.some((signature) => header.subarray(0, signature.length).equals(Buffer.from(signature)))
+}
+
+/* Rejects and removes uploads whose content does not match a supported image format, so that
+   arbitrary attacker-controlled bytes cannot be staged inside the publicly served uploads folder. */
+function ensureFileIsImage (req: Request, res: Response, next: NextFunction) {
+  const file = req.file
+  if (!file) {
+    next()
+    return
+  }
+  const extension = path.extname(file.filename).replace('.', '').toLowerCase()
+  if (hasImageSignature(file.path, extension)) {
+    next()
+    return
+  }
+  try {
+    fs.unlinkSync(file.path)
+  } catch {
+    logger.warn(`Could not remove rejected upload ${file.path}`)
+  }
+  res.status(415).json({ error: 'Invalid file type' })
+}
+
 const uploadToDisk = multer({
   storage: multer.diskStorage({
     destination: (req: Request, file: any, cb: any) => {

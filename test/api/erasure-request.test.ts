@@ -6,6 +6,9 @@
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
+import fs from 'node:fs'
+import path from 'node:path'
+import i18n from 'i18n'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
 import { login } from './helpers/auth'
@@ -87,6 +90,27 @@ void describe('/dataerasure', () => {
       .send({ layout: null })
 
     assert.equal(res.status, 200)
+  })
+
+  void it('POST erasure request with nested parameters does not expose them to the template context', async () => {
+    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+
+    const res = await request(app)
+      .post('/dataerasure/')
+      .set({ Cookie: 'token=' + token })
+      .type('form')
+      .send('p[phrase]=NESTED_PROBE&p[locale]=nested_probe')
+
+    assert.equal(res.status, 200)
+    assert.ok(!res.text.includes('NESTED_PROBE'))
+  })
+
+  void it('translating an unknown locale does not persist a catalogue file on disk', () => {
+    const catalogueFile = path.resolve('i18n/unknown_locale_probe.json')
+
+    i18n.__({ phrase: 'UNKNOWN_LOCALE_PROBE', locale: 'unknown_locale_probe' })
+
+    assert.equal(fs.existsSync(catalogueFile), false)
   })
 
   if (utils.isChallengeEnabled(challenges.lfrChallenge)) {
