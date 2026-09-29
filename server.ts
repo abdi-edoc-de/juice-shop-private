@@ -167,6 +167,31 @@ void collectDurationPromise('validatePreconditions', validatePreconditions)()
 void collectDurationPromise('cleanupFtpFolder', cleanupFtpFolder)()
 void collectDurationPromise('validateConfig', validateConfig)({})
 
+/*
+ * The `errorhandler` debug page renders the exception message, a full server-side
+ * stack trace, absolute file system paths and the Express version to whoever
+ * triggered the error - including unauthenticated callers. It must therefore only
+ * be mounted for local development and automated tests. Every other (i.e. deployed)
+ * environment gets the handler below, which logs the details server-side and
+ * answers with a generic message only.
+ */
+function isVerboseErrorPageAllowed () {
+  const environment = process.env.NODE_ENV ?? ''
+  return environment === 'development' || environment === 'test'
+}
+
+function genericErrorHandler () {
+  return (err: Error, req: Request, res: Response, next: NextFunction) => {
+    logger.error(`Unhandled error while processing ${req.method} ${req.originalUrl}: ${String(err)}`)
+    if (res.headersSent) {
+      next(err)
+      return
+    }
+    const statusCode = res.statusCode >= 400 ? res.statusCode : 500
+    res.status(statusCode).json({ error: statusCode === 404 ? 'Not Found' : 'Internal Server Error' })
+  }
+}
+
 function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Locals */
   app.locals.captchaId = 0
@@ -698,7 +723,11 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Error Handling */
   app.use(verify.errorHandlingChallenge())
-  app.use(errorhandler())
+  if (isVerboseErrorPageAllowed()) {
+    app.use(errorhandler())
+  } else {
+    app.use(genericErrorHandler())
+  }
 }
 
 // Function called first to ensure that all the i18n files are reloaded successfully before other linked operations.
