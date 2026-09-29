@@ -49,10 +49,68 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
+// Tokens are always issued as RS256 by `authorize()`, so RS256 is the only algorithm
+// the server is ever allowed to accept. Deriving the algorithm from the (attacker
+// controlled) token header instead enables two key-free forgery paths:
+//   * `{"alg":"none"}` with an empty signature segment, and
+//   * `{"alg":"HS256"}` HMAC'd with the RSA public key, which is served publicly
+//     at /encryptionkeys/jwt.pub (RS256 -> HS256 algorithm confusion).
+const jwtAlgorithmAllowlist = ['RS256']
+
+const jwtHeaderOf = (token: string) => {
+  const segments = token.split('.')
+  if (segments.length !== 3) {
+    return undefined
+  }
+  try {
+    const header = JSON.parse(Buffer.from(segments[0], 'base64').toString('utf8'))
+    return (header !== null && typeof header === 'object') ? header : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Enforces a server-side algorithm allowlist on a JWT before any signature
+ * verification library gets to pick the algorithm from the token header itself.
+ */
+export const hasAllowedAlgorithm = (token?: string) => {
+  if (!token) {
+    return false
+  }
+  const segments = token.split('.')
+  // an unsigned ("alg":"none") token carries an empty signature segment
+  if (segments.length !== 3 || segments[2] === '') {
+    return false
+  }
+  const header = jwtHeaderOf(token)
+  return typeof header?.alg === 'string' && jwtAlgorithmAllowlist.includes(header.alg)
+}
+
+const rejectDisallowedAlgorithm = (middleware: any) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token && !hasAllowedAlgorithm(token)) {
+      res.status(401).json({ status: 'error', message: 'invalid algorithm' })
+      return
+    }
+    middleware(req, res, next)
+  }
+}
+
+export const isAuthorized = () => rejectDisallowedAlgorithm(expressJwt(({ secret: publicKey, algorithms: jwtAlgorithmAllowlist }) as any))
+export const denyAll = () => rejectDisallowedAlgorithm(expressJwt({ secret: '' + Math.random(), algorithms: jwtAlgorithmAllowlist } as any))
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+export const verify = (token: string) => {
+  if (!hasAllowedAlgorithm(token)) {
+    return false
+  }
+  try {
+    return (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey)
+  } catch {
+    return false
+  }
+}
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -185,7 +243,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && hasAllowedAlgorithm(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)

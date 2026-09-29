@@ -72,7 +72,8 @@ export async function status (req: Request, res: Response) {
         email: user.email,
         setupToken: security.authorize({
           secret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: user.id // bind the capability token to the user it was issued for
         })
       })
     } else {
@@ -104,26 +105,31 @@ export async function setup (req: Request, res: Response) {
 
     const { password, setupToken, initialToken } = req.body
 
-    if (user.password !== security.hash(password)) {
-      throw new Error('Password doesnt match stored password')
-    }
-
-    if (user.totpSecret !== '') {
-      throw new Error('User has 2fa already setup')
-    }
-
-    const { secret, type } = security.verify(setupToken) && security.decode(setupToken)
-    if (type !== 'totp_setup_secret') {
-      throw new Error('SetupToken is of wrong type')
-    }
-    if (!verifySync({ secret, token: initialToken, epochTolerance: 30 }).valid) {
-      throw new Error('Initial token doesnt match the secret from the setupToken')
-    }
-
-    // Update db model and cached object
+    // Re-authentication and the current 2FA state have to be checked against the
+    // persisted user record. The caller's own token is client-supplied data and
+    // must never be used as the source of truth for its own password hash.
     const userModel = await UserModel.findByPk(user.id)
     if (userModel == null) {
       throw new Error('No such user found!')
+    }
+
+    if (typeof password !== 'string' || userModel.password !== security.hash(password)) {
+      throw new Error('Password doesnt match stored password')
+    }
+
+    if (userModel.totpSecret !== '') {
+      throw new Error('User has 2fa already setup')
+    }
+
+    const { secret, type, userId } = security.verify(setupToken) && security.decode(setupToken)
+    if (type !== 'totp_setup_secret') {
+      throw new Error('SetupToken is of wrong type')
+    }
+    if (userId !== userModel.id) {
+      throw new Error('SetupToken was not issued for this user')
+    }
+    if (!verifySync({ secret, token: initialToken, epochTolerance: 30 }).valid) {
+      throw new Error('Initial token doesnt match the secret from the setupToken')
     }
 
     userModel.totpSecret = secret
@@ -149,14 +155,14 @@ export async function disable (req: Request, res: Response) {
 
     const { password } = req.body
 
-    if (user.password !== security.hash(password)) {
-      throw new Error('Password doesnt match stored password')
-    }
-
-    // Update db model and cached object
     const userModel = await UserModel.findByPk(user.id)
     if (userModel == null) {
       throw new Error('No such user found!')
+    }
+
+    // Re-authenticate against the persisted password hash, not the token claim
+    if (typeof password !== 'string' || userModel.password !== security.hash(password)) {
+      throw new Error('Password doesnt match stored password')
     }
 
     userModel.totpSecret = ''

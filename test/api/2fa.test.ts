@@ -12,7 +12,7 @@ import { generateSync } from 'otplib'
 import type { Express } from 'express'
 import * as security from '../../lib/insecurity'
 import { createTestApp } from './helpers/setup'
-import { login, register } from './helpers/auth'
+import { login, register, userIdFromToken } from './helpers/auth'
 
 const jsonHeader = { 'content-type': 'application/json' }
 
@@ -194,7 +194,8 @@ void describe('/rest/2fa/setup', () => {
         password,
         setupToken: security.authorize({
           secret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret })
       })
@@ -226,7 +227,8 @@ void describe('/rest/2fa/setup', () => {
         password: password + ' this makes the password wrong',
         setupToken: security.authorize({
           secret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret })
       })
@@ -252,7 +254,8 @@ void describe('/rest/2fa/setup', () => {
         password,
         setupToken: security.authorize({
           secret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret: 'OJQOJNTB46VLWUO4TVKXIULU2WLPFQOJ' })
       })
@@ -278,7 +281,8 @@ void describe('/rest/2fa/setup', () => {
         password,
         setupToken: security.authorize({
           secret,
-          type: 'totp_setup_secret_foobar'
+          type: 'totp_setup_secret_foobar',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret })
       })
@@ -303,7 +307,8 @@ void describe('/rest/2fa/setup', () => {
         password,
         setupToken: security.authorize({
           secret: totpSecret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret: totpSecret })
       })
@@ -336,7 +341,8 @@ void describe('/rest/2fa/setup', () => {
         password,
         setupToken: security.authorize({
           secret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret })
       })

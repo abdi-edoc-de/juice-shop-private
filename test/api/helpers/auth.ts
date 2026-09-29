@@ -10,6 +10,10 @@ import * as security from '../../../lib/insecurity'
 
 const jsonHeader = { 'content-type': 'application/json' }
 
+export function userIdFromToken (token: string) {
+  return (security.decode(token) as any)?.data?.id
+}
+
 export async function login (app: Express, { email, password, totpSecret }: { email: string, password: string, totpSecret?: string }) {
   const loginRes = await request(app)
     .post('/rest/user/login')
@@ -68,7 +72,8 @@ export async function register (app: Express, { email, password, totpSecret }: {
         password,
         setupToken: security.authorize({
           secret: totpSecret,
-          type: 'totp_setup_secret'
+          type: 'totp_setup_secret',
+          userId: userIdFromToken(token)
         }),
         initialToken: generateSync({ secret: totpSecret })
       })
