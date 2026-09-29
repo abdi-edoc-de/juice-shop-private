@@ -183,6 +183,24 @@ export const appendUserId = () => {
   }
 }
 
+/* Binds the owner of a newly created record to the principal of the current session
+   instead of trusting a client-supplied `UserId` in the request body. Unlike
+   `appendUserId()` this middleware does not require authentication: anonymous callers
+   are allowed through but their record is stored without an owner (`null`). This keeps
+   endpoints which intentionally accept unauthenticated writes (e.g. feedback) from
+   being abused to persist records attributed to another - possibly privileged - user. */
+export const appendSessionUserId = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.body === null || typeof req.body !== 'object') {
+      next()
+      return
+    }
+    const user = authenticatedUsers.from(req)
+    req.body.UserId = user?.data?.id ?? null
+    next()
+  }
+}
+
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
