@@ -8,9 +8,11 @@ import * as challengeUtils from '../lib/challengeUtils'
 import { challenges } from '../data/datacache'
 import { UserModel } from '../models/user'
 import * as security from '../lib/insecurity'
+import * as utils from '../lib/utils'
 
 export function changePassword () {
-  return async ({ query, headers, connection }: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const { query, connection } = req
     const currentPassword = query.current as string
     const newPassword = query.new as string
     const newPasswordInString = newPassword?.toString()
@@ -24,8 +26,8 @@ export function changePassword () {
       return
     }
 
-    const token = headers.authorization ? headers.authorization.substr('Bearer='.length) : null
-    if (token === null) {
+    const token = utils.jwtFrom(req)
+    if (!token || !security.verify(token)) {
       next(new Error('Blocked illegal activity by ' + connection.remoteAddress))
       return
     }
@@ -36,7 +38,9 @@ export function changePassword () {
       return
     }
 
-    if (currentPassword && security.hash(currentPassword) !== loggedInUser.data.password) {
+    // The current password is mandatory: without it a leaked or forged token would be
+    // enough to permanently take over the account.
+    if (!currentPassword || security.hash(currentPassword) !== loggedInUser.data.password) {
       res.status(401).send(res.__('Current password is not correct.'))
       return
     }

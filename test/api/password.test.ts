@@ -89,7 +89,7 @@ void describe('/rest/user/change-password', () => {
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
   })
 
-  void it('GET password change for Bender without current password using GET request', async () => {
+  void it('GET password change is rejected when the current password is omitted', async () => {
     const { token } = await login(app, {
       email: 'bender@' + config.get<string>('application.domain'),
       password: 'OhG0dPlease1nsertLiquor!'
@@ -99,7 +99,26 @@ void describe('/rest/user/change-password', () => {
       .get('/rest/user/change-password?new=slurmCl4ssic&repeat=slurmCl4ssic')
       .set({ Authorization: 'Bearer ' + token })
 
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Current password is not correct'))
+  })
+
+  void it('GET password change is rejected for an unsigned (alg:none) token', async () => {
+    const forgedToken = [
+      Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url'),
+      Buffer.from(JSON.stringify({
+        status: 'success',
+        data: { id: 1, email: 'admin@' + config.get<string>('application.domain'), role: 'admin' }
+      })).toString('base64url'),
+      ''
+    ].join('.')
+
+    const res = await request(app)
+      .get('/rest/user/change-password?current=whatever&new=foo&repeat=foo')
+      .set({ Authorization: 'Bearer ' + forgedToken })
+
+    assert.equal(res.status, 500)
+    assert.ok(res.text.includes('Error: Blocked illegal activity'))
   })
 })
 

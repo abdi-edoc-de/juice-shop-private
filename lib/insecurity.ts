@@ -49,10 +49,45 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+// Only asymmetric RS256 tokens issued by this server are ever accepted. Never trust the
+// algorithm advertised in the (attacker-controlled) token header, otherwise unsigned
+// (`alg: none`) or symmetrically signed tokens could be forged without any key material.
+const jwtAlgorithm = 'RS256'
+const allowedJwtAlgorithms = [jwtAlgorithm]
+
+const hasAllowedAlgorithm = (token: string) => {
+  try {
+    const header = jws.decode(token)?.header
+    return header != null && allowedJwtAlgorithms.includes(header.alg)
+  } catch {
+    return false
+  }
+}
+
+export const verify = (token: string) => {
+  if (!token || !hasAllowedAlgorithm(token)) {
+    return false
+  }
+  try {
+    return jws.verify(token, jwtAlgorithm, publicKey)
+  } catch {
+    return false
+  }
+}
+
+export const isAuthorized = () => {
+  const authenticate = expressJwt(({ secret: publicKey, algorithms: allowedJwtAlgorithms }) as any)
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token && !verify(token)) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
+    authenticate(req, res, next)
+  }
+}
+export const denyAll = () => expressJwt({ secret: '' + Math.random(), algorithms: allowedJwtAlgorithms } as any)
+export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: jwtAlgorithm })
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -185,7 +220,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && verify(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
