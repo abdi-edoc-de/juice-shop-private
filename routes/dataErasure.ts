@@ -21,6 +21,38 @@ const entities = new Entities()
 
 const router = express.Router()
 
+/*
+ * The hbs view engine treats the `layout` local as a template path that is resolved relative to
+ * the views directory and then compiled and executed as a Handlebars template. A client-supplied
+ * value therefore enables arbitrary local file read (CWE-22) as well as server-side template
+ * injection (CWE-1336) for every file that an attacker can influence. Layouts are hence limited
+ * to paths inside the application directory and files that hold credentials, keys or
+ * attacker-writable content are rejected.
+ */
+const forbiddenLayoutPathFragments = [
+  'ftp',
+  'ctf.key',
+  'encryptionkeys',
+  'users.yml',
+  `${path.sep}logs${path.sep}`,
+  `${path.sep}uploads${path.sep}`,
+  `${path.sep}.env`,
+  '.key',
+  '.pem',
+  '.sqlite'
+]
+
+const isForbiddenLayout = (layout: string): boolean => {
+  const applicationRoot = path.resolve('.')
+  // mirrors how the view engine resolves the layout, so the check applies to the file actually loaded
+  const resolvedLayoutPath = path.resolve('views', layout)
+  if (!resolvedLayoutPath.startsWith(applicationRoot + path.sep)) {
+    return true
+  }
+  const normalizedLayoutPath = resolvedLayoutPath.toLowerCase()
+  return forbiddenLayoutPathFragments.some((fragment) => normalizedLayoutPath.includes(fragment.toLowerCase()))
+}
+
 router.get('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
@@ -100,28 +132,31 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
         _logo_: utils.extractFilename(config.get('application.logo'))
       }
 
-      if (req.body.layout && utils.isChallengeEnabled(challenges.lfrChallenge)) {
-        const filePath: string = path.resolve(req.body.layout).toLowerCase()
-        const isForbiddenFile: boolean = (filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys'))
-        if (!isForbiddenFile) {
-          res.render('dataErasureResult', {
-            ...req.body,
-            ...themeVars
-          }, (error, html) => {
-            if (!html || error) {
-              next(new Error(error.message))
-            } else {
-              const sendlfrResponse: string = html.slice(0, 100) + '......'
-              res.send(sendlfrResponse)
-              challengeUtils.solveIf(challenges.lfrChallenge, () => { return true })
-            }
-          })
-        } else {
+      const layout = req.body.layout
+      /*
+       * The request body is never spread into the render context: doing so would let a client
+       * define view-engine locals (most notably `layout`) and thereby choose the template file
+       * that is read and executed on the server.
+       */
+      if (layout && utils.isChallengeEnabled(challenges.lfrChallenge)) {
+        if (typeof layout !== 'string' || isForbiddenLayout(layout)) {
           next(new Error('File access not allowed'))
+          return
         }
+        res.render('dataErasureResult', {
+          layout,
+          ...themeVars
+        }, (error, html) => {
+          if (!html || error) {
+            next(new Error(error.message))
+          } else {
+            const sendlfrResponse: string = html.slice(0, 100) + '......'
+            res.send(sendlfrResponse)
+            challengeUtils.solveIf(challenges.lfrChallenge, () => { return true })
+          }
+        })
       } else {
         res.render('dataErasureResult', {
-          ...req.body,
           ...themeVars
         })
       }
