@@ -166,11 +166,21 @@ void describe('/profile/image/url (with local mock server)', () => {
     const imageBuffer = fs.readFileSync(path.resolve(__dirname, '../files/validProfileImage.jpg'))
 
     mockServer = http.createServer((req, res) => {
+      /* the server under test aborts oversized transfers, which can surface as EPIPE here */
+      res.on('error', () => {})
       if (req.url?.includes('non-ok')) {
         res.statusCode = 404
         res.end()
       } else if (req.url?.includes('no-body')) {
         res.statusCode = 204
+        res.end()
+      } else if (req.url?.includes('oversized')) {
+        /* chunked (no Content-Length) so the streaming byte cap is what stops the transfer */
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'image/png')
+        for (let i = 0; i < 16; i++) {
+          res.write(Buffer.alloc(64 * 1024, 1))
+        }
         res.end()
       } else {
         res.statusCode = 200
@@ -229,6 +239,20 @@ void describe('/profile/image/url (with local mock server)', () => {
     assert.ok(
       fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.png`),
       `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.png to exist`
+    )
+  })
+
+  void it('POST with oversized response does not persist a file', async () => {
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://localhost:${mockPort}/oversized.png`)
+      .redirects(0)
+
+    assert.equal(res.status, 302)
+    assert.ok(
+      !fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.png`),
+      `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.png not to exist`
     )
   })
 
