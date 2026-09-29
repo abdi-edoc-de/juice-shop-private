@@ -205,8 +205,18 @@ void describe('insecurity', () => {
   })
 
   void describe('deluxeToken', () => {
-    void it('returns SHA-256 HMAC with private key as salt for email and deluxe role', () => {
-      assert.equal(security.deluxeToken('test@juice-sh.op'), '91e2b6493fda679d95ae05ac0d1cdce82c2ad4f7b518202a3ed54732531bc7e1')
+    void it('returns a deterministic SHA-256 HMAC for email and deluxe role', () => {
+      assert.match(security.deluxeToken('test@juice-sh.op'), /^[0-9a-f]{64}$/)
+      assert.equal(security.deluxeToken('test@juice-sh.op'), security.deluxeToken('test@juice-sh.op'))
+    })
+
+    void it('returns a different token for a different email', () => {
+      assert.notEqual(security.deluxeToken('test@juice-sh.op'), security.deluxeToken('other@juice-sh.op'))
+    })
+
+    void it('is not keyed with the JWT signing key published in the IaC files', () => {
+      // HMAC-SHA256 of 'test@juice-sh.op' + 'deluxe' under the disclosed RSA private key
+      assert.notEqual(security.deluxeToken('test@juice-sh.op'), '91e2b6493fda679d95ae05ac0d1cdce82c2ad4f7b518202a3ed54732531bc7e1')
     })
   })
 

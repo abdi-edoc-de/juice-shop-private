@@ -13,12 +13,31 @@ import jws from 'jws'
 import sanitizeHtmlLib from 'sanitize-html'
 import sanitizeFilenameLib from 'sanitize-filename'
 import * as utils from './utils'
+import logger from './logger'
 
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
 
 export const publicKey = fs ? fs.readFileSync('encryptionkeys/jwt.pub', 'utf8') : 'placeholder-public-key'
 const privateKey = '-----BEGIN RSA PRIVATE KEY-----\r\nMIICXAIBAAKBgQDNwqLEe9wgTXCbC7+RPdDbBbeqjdbs4kOPOIGzqLpXvJXlxxW8iMz0EaM4BKUqYsIa+ndv3NAn2RxCd5ubVdJJcX43zO6Ko0TFEZx/65gY3BE0O6syCEmUP4qbSd6exou/F+WTISzbQ5FBVPVmhnYhG/kpwt/cIxK5iUn5hm+4tQIDAQABAoGBAI+8xiPoOrA+KMnG/T4jJsG6TsHQcDHvJi7o1IKC/hnIXha0atTX5AUkRRce95qSfvKFweXdJXSQ0JMGJyfuXgU6dI0TcseFRfewXAa/ssxAC+iUVR6KUMh1PE2wXLitfeI6JLvVtrBYswm2I7CtY0q8n5AGimHWVXJPLfGV7m0BAkEA+fqFt2LXbLtyg6wZyxMA/cnmt5Nt3U2dAu77MzFJvibANUNHE4HPLZxjGNXN+a6m0K6TD4kDdh5HfUYLWWRBYQJBANK3carmulBwqzcDBjsJ0YrIONBpCAsXxk8idXb8jL9aNIg15Wumm2enqqObahDHB5jnGOLmbasizvSVqypfM9UCQCQl8xIqy+YgURXzXCN+kwUgHinrutZms87Jyi+D8Br8NY0+Nlf+zHvXAomD2W5CsEK7C+8SLBr3k/TsnRWHJuECQHFE9RA2OP8WoaLPuGCyFXaxzICThSRZYluVnWkZtxsBhW2W8z1b8PvWUE7kMy7TnkzeJS2LSnaNHoyxi7IaPQUCQCwWU4U+v4lD7uYBw00Ga/xt+7+UqFPlPVdz1yyr4q24Zxaw0LgmuEvgU5dycq8N7JxjTubX0MIRR+G9fmDBBl8=\r\n-----END RSA PRIVATE KEY-----'
+
+/*
+ * Secret used exclusively to derive the "deluxe" entitlement receipt (deluxeToken).
+ * It MUST NOT be the JWT signing key or any other value the application hands out
+ * (e.g. the key embedded in the IaC files served from /infrastructure): anyone able
+ * to read such a value could otherwise mint a valid entitlement for any e-mail
+ * offline and escalate to the paid tier without ever paying for it.
+ * Provide DELUXE_TOKEN_SECRET to keep entitlements valid across restarts; otherwise
+ * an ephemeral per-process secret is generated, which invalidates previously issued
+ * receipts on restart.
+ */
+const configuredDeluxeTokenSecret = process.env.DELUXE_TOKEN_SECRET
+if (configuredDeluxeTokenSecret === undefined || configuredDeluxeTokenSecret === '') {
+  logger.warn('No DELUXE_TOKEN_SECRET configured: falling back to an ephemeral secret for deluxe entitlements')
+}
+const deluxeTokenSecret = (configuredDeluxeTokenSecret !== undefined && configuredDeluxeTokenSecret !== '')
+  ? configuredDeluxeTokenSecret
+  : crypto.randomBytes(32).toString('hex')
 
 interface ResponseWithUser {
   status?: string
@@ -147,8 +166,14 @@ export const roles = {
 }
 
 export const deluxeToken = (email: string) => {
-  const hmac = crypto.createHmac('sha256', privateKey)
+  const hmac = crypto.createHmac('sha256', deluxeTokenSecret)
   return hmac.update(email + roles.deluxe).digest('hex')
+}
+
+const timingSafeEquals = (actual: string, expected: string) => {
+  const actualBuffer = Buffer.from(actual, 'utf8')
+  const expectedBuffer = Buffer.from(expected, 'utf8')
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer)
 }
 
 export const isAccounting = () => {
@@ -164,7 +189,12 @@ export const isAccounting = () => {
 
 export const isDeluxe = (req: Request) => {
   const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
-  return decodedToken?.data?.role === roles.deluxe && decodedToken?.data?.deluxeToken && decodedToken?.data?.deluxeToken === deluxeToken(decodedToken?.data?.email)
+  const email = decodedToken?.data?.email
+  const presentedToken = decodedToken?.data?.deluxeToken
+  if (decodedToken?.data?.role !== roles.deluxe || typeof email !== 'string' || typeof presentedToken !== 'string' || !presentedToken) {
+    return false
+  }
+  return timingSafeEquals(presentedToken, deluxeToken(email))
 }
 
 export const isCustomer = (req: Request) => {
