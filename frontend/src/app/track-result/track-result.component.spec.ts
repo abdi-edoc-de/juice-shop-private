@@ -60,12 +60,27 @@ describe('TrackResultComponent', () => {
         expect(component).toBeTruthy()
     })
 
-    it('should consider order number as trusted HTML', () => {
+    it('should render the order number as text without bypassing the sanitizer', () => {
         component.orderId = '<a src="link">Link</a>'
         trackOrderService.find.mockReturnValue(of({ data: [{ orderId: component.orderId }] }))
         component.ngOnInit()
+        fixture.detectChanges()
 
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<code><a src="link">Link</a></code>')
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        expect(component.results.orderNo).toBe('<a src="link">Link</a>')
+        const code = (fixture.nativeElement as HTMLElement).querySelector('h1 code')
+        expect(code?.textContent).toBe('<a src="link">Link</a>')
+        expect(code?.querySelector('a')).toBeNull()
+    })
+
+    it('should not execute markup smuggled into the order number', () => {
+        trackOrderService.find.mockReturnValue(of({ data: [{ orderId: '<img src="x" onerror="alert(1)">' }] }))
+        component.ngOnInit()
+        fixture.detectChanges()
+
+        const compiled: HTMLElement = fixture.nativeElement
+        expect(compiled.querySelector('h1 img')).toBeNull()
+        expect(compiled.querySelector('h1 code')?.textContent).toBe('<img src="x" onerror="alert(1)">')
     })
 
     it('should set "delivered" status for delivered orders', () => {
