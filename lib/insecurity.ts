@@ -172,6 +172,25 @@ export const isCustomer = (req: Request) => {
   return decodedToken?.data?.role === roles.customer
 }
 
+/**
+ * Removes server-managed attributes from an incoming request body so they cannot be
+ * mass-assigned through the generic auto-CRUD handlers. Attributes like `lastLoginIp`
+ * are derived on the server and are rendered back to the client, so accepting them
+ * from an (unauthenticated) caller would allow persisting arbitrary attacker content.
+ */
+export const denyUserAttributes = (attributes: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.body !== null && typeof req.body === 'object') {
+      for (const attribute of attributes) {
+        if (Object.prototype.hasOwnProperty.call(req.body, attribute)) {
+          delete req.body[attribute]
+        }
+      }
+    }
+    next()
+  }
+}
+
 export const appendUserId = () => {
   return (req: Request, res: Response, next: NextFunction) => {
     try {

@@ -59,6 +59,19 @@ void describe('/api/Users', () => {
     assert.equal(res.body.data.password, undefined)
   })
 
+  void it('POST new user cannot mass-assign lastLoginIp', async () => {
+    const res = await request(app)
+      .post('/api/Users')
+      .set(jsonHeader)
+      .send({
+        email: 'horst6@horstma.nn',
+        password: 'hooooorst',
+        lastLoginIp: '<img src=x onerror=alert(1)>'
+      })
+    assert.equal(res.status, 201)
+    assert.equal(res.body.data.lastLoginIp, '0.0.0.0')
+  })
+
   void it('POST new admin', async () => {
     const res = await request(app)
       .post('/api/Users')
