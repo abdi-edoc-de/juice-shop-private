@@ -50,7 +50,41 @@ export const cutOffPoisonNullByte = (str: string) => {
 }
 
 export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
+
+/* Endpoints guarded by denyAll() must never be reachable. Tokens are only considered at all if they
+   carry a signature created with the asymmetric algorithm we issue tokens with - a keyless
+   "alg": "none" token (or any other algorithm advertised in the attacker-controlled header) is
+   rejected before the JWT middleware gets a chance to trust it. */
+const allowedJwtAlgorithms = ['RS256']
+
+export const hasAllowedJwtAlgorithm = (token?: string) => {
+  if (!token) {
+    return false
+  }
+  const segments = token.split('.')
+  if (segments.length !== 3 || segments[2].trim() === '') { // an empty signature segment is never verifiable
+    return false
+  }
+  try {
+    const algorithm = jws.decode(token)?.header?.alg
+    return typeof algorithm === 'string' && allowedJwtAlgorithms.includes(algorithm)
+  } catch {
+    return false
+  }
+}
+
+export const denyAll = () => {
+  const middleware = expressJwt({ secret: '' + Math.random() } as any) as unknown as (req: Request, res: Response, next: NextFunction) => void
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token && !hasAllowedJwtAlgorithm(token)) {
+      res.status(401).json({ status: 'error', message: 'Unauthorized' })
+      return
+    }
+    middleware(req, res, next)
+  }
+}
+
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }

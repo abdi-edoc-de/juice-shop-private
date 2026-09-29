@@ -10,7 +10,7 @@
     @if (disabledBecauseOfEnv() ==='Safety Mode') {
       <span warning-text [innerHTML]="'INFO_DISABLED_CHALLENGES' | translate: {num: numberOfDisabledChallenges(),env:'safety mode being turned on'}"></span>
     } @else {
-      <span warning-text [innerHTML]="'INFO_DISABLED_CHALLENGES' | translate: {num: numberOfDisabledChallenges(), env: disabledBecauseOfEnv()}"></span>
+      <span warning-text [innerHTML]="'INFO_DISABLED_CHALLENGES' | translate: {num: numberOfDisabledChallenges(), env: disabledBecauseOfEnvText()}"></span>
     }
     <button warning-action mat-button color="tertiary" (click)="toggleShowDisabledChallenges()">
       @if (filterSetting().showDisabledChallenges === true) {

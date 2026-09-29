@@ -7,6 +7,14 @@ import { MatButtonModule } from '@angular/material/button'
 import { WarningCardComponent } from '../warning-card/warning-card.component'
 import { NgClass } from '@angular/common'
 
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
 @Component({
   changeDetection: ChangeDetectionStrategy.Eager,
   selector: 'challenges-unavailable-warning',
@@ -30,6 +38,14 @@ export class ChallengesUnavailableWarningComponent {
   readonly disabledBecauseOfEnv = computed(() => {
     const disabled = this.disabledChallenges()
     return disabled.length > 0 ? disabled[0].disabledEnv : null
+  })
+
+  /* The INFO_DISABLED_CHALLENGES catalogue entry is an HTML fragment which is bound to [innerHTML],
+     and ngx-translate substitutes parameters without escaping them. The environment name originates
+     from server data, so it has to be escaped here to prevent content/hyperlink injection. */
+  readonly disabledBecauseOfEnvText = computed(() => {
+    const env = this.disabledBecauseOfEnv()
+    return env === null || env === undefined ? env : escapeHtml(String(env))
   })
 
   readonly disabledOnWindows = computed(() => this.disabledOnWindowsChallenges().length > 0)

@@ -343,5 +343,21 @@ void describe('insecurity', () => {
     void it('denyAll returns a middleware', () => {
       assert.equal(typeof security.denyAll(), 'function')
     })
+
+    void it('hasAllowedJwtAlgorithm accepts a properly signed RS256 token', () => {
+      assert.equal(security.hasAllowedJwtAlgorithm(security.authorize({ data: { id: 1 } })), true)
+    })
+
+    void it('hasAllowedJwtAlgorithm rejects unsigned, unsupported and malformed tokens', () => {
+      const payload = Buffer.from(JSON.stringify({ data: { role: 'admin' } })).toString('base64url')
+      const unsigned = `${Buffer.from(JSON.stringify({ typ: 'JWT', alg: 'none' })).toString('base64url')}.${payload}.`
+      const hmacSigned = `${Buffer.from(JSON.stringify({ typ: 'JWT', alg: 'HS256' })).toString('base64url')}.${payload}.AAAA`
+
+      assert.equal(security.hasAllowedJwtAlgorithm(unsigned), false)
+      assert.equal(security.hasAllowedJwtAlgorithm(hmacSigned), false)
+      assert.equal(security.hasAllowedJwtAlgorithm('not.a.jwt'), false)
+      assert.equal(security.hasAllowedJwtAlgorithm(''), false)
+      assert.equal(security.hasAllowedJwtAlgorithm(undefined), false)
+    })
   })
 })

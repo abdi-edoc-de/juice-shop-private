@@ -78,6 +78,17 @@ void describe('/api/Challenges/:id', () => {
       .set(authHeader)
     assert.equal(res.status, 401)
   })
+
+  void it('PUT update existing challenge is forbidden with an unsigned "alg": "none" token', async () => {
+    const header = Buffer.from(JSON.stringify({ typ: 'JWT', alg: 'none' })).toString('base64url')
+    const payload = Buffer.from(JSON.stringify({ status: 'success', data: { id: 1, email: 'admin@juice-sh.op', role: 'admin' } })).toString('base64url')
+    const unsignedToken = `${header}.${payload}.`
+    const res = await request(app)
+      .put('/api/Challenges/1')
+      .set({ Authorization: 'Bearer ' + unsignedToken, 'content-type': 'application/json' })
+      .send({ disabledEnv: 'Docker<b>INJECTED</b>' })
+    assert.equal(res.status, 401)
+  })
 })
 
 void describe('/rest/continue-code', () => {
