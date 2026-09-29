@@ -67,26 +67,21 @@ void describe('/redirect', () => {
     assert.equal(res.status, 302)
   })
 
-  void it('GET error message with information leakage when calling /redirect without query parameter', async () => {
+  void it('GET rejected with 406 when calling /redirect without query parameter', async () => {
     const res = await request(app)
       .get('/redirect')
-    assert.equal(res.status, 500)
+    assert.equal(res.status, 406)
     assert.ok(res.headers['content-type']?.includes('text/html'))
     assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('TypeError'))
-    assert.ok(res.text.includes('of undefined'))
-    assert.ok(res.text.includes('&#39;includes&#39;'))
+    assert.ok(res.text.includes('Unrecognized target URL for redirect'))
   })
 
-  void it('GET error message with information leakage when calling /redirect with unrecognized query parameter', async () => {
+  void it('GET rejected with 406 when calling /redirect with unrecognized query parameter', async () => {
     const res = await request(app)
       .get('/redirect?x=y')
-    assert.equal(res.status, 500)
+    assert.equal(res.status, 406)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('TypeError'))
-    assert.ok(res.text.includes('of undefined'))
-    assert.ok(res.text.includes('&#39;includes&#39;'))
+    assert.ok(res.text.includes('Unrecognized target URL for redirect'))
   })
 
   void it('GET error message hinting at allowlist validation when calling /redirect with an unrecognized "to" target', async () => {
@@ -98,14 +93,27 @@ void describe('/redirect', () => {
     assert.ok(res.text.includes('Unrecognized target URL for redirect: whatever'))
   })
 
-  void it('GET redirected to target URL in "to" parameter when a allow-listed URL is part of the query string', async () => {
+  void it('GET not redirected when an allow-listed URL is only part of the target URL', async () => {
     const res = await request(app)
       .get('/redirect?to=/score-board?satisfyIndexOf=https://github.com/juice-shop/juice-shop')
-      .redirects(1)
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('main.js'))
-    assert.ok(res.text.includes('scripts.js'))
-    assert.ok(res.text.includes('polyfills.js'))
+      .redirects(0)
+    assert.equal(res.status, 406)
+    assert.equal(res.headers.location, undefined)
+  })
+
+  void it('GET not redirected to a foreign host embedding an allow-listed URL in its query string', async () => {
+    const res = await request(app)
+      .get('/redirect?to=' + encodeURIComponent('https://attacker-phish.example.net/login?x=https://github.com/juice-shop/juice-shop'))
+      .redirects(0)
+    assert.equal(res.status, 406)
+    assert.equal(res.headers.location, undefined)
+  })
+
+  void it('GET not redirected to a foreign host smuggled behind an allow-listed URL as userinfo', async () => {
+    const res = await request(app)
+      .get('/redirect?to=' + encodeURIComponent('https://github.com/juice-shop/juice-shop@attacker.example.net'))
+      .redirects(0)
+    assert.equal(res.status, 406)
+    assert.equal(res.headers.location, undefined)
   })
 })
