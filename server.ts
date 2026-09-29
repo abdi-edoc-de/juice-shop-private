@@ -284,9 +284,12 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     }
   })
 
+  /* Order confirmation PDFs are customer-specific and must not be enumerable through the directory listing */
+  const isOrderConfirmationFile = (filename: string) => /^order_.+\.pdf$/i.test(filename)
+
   // vuln-code-snippet start directoryListingChallenge accessLogDisclosureChallenge
   /* /ftp directory browsing and file download */ // vuln-code-snippet neutral-line directoryListingChallenge
-  app.use('/ftp', serveIndexMiddleware, serveIndex('ftp', { icons: true })) // vuln-code-snippet vuln-line directoryListingChallenge
+  app.use('/ftp', serveIndexMiddleware, serveIndex('ftp', { icons: true, filter: (filename) => !isOrderConfirmationFile(filename) })) // vuln-code-snippet vuln-line directoryListingChallenge
   app.use('/ftp(?!/quarantine)/:file', servePublicFiles()) // vuln-code-snippet vuln-line directoryListingChallenge
   app.use('/ftp/quarantine/:file', serveQuarantineFiles()) // vuln-code-snippet neutral-line directoryListingChallenge
 
