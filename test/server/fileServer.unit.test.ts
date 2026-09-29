@@ -82,47 +82,27 @@ void describe('fileServer', () => {
     assert.equal(challenges.directoryListingChallenge.solved, true)
   })
 
-  void it('should solve "easterEggLevelOneChallenge" when requesting eastere.gg with Poison Null Byte attack', () => {
-    challenges.easterEggLevelOneChallenge = { solved: false, save } as unknown as Challenge
-    req.params.file = 'eastere.gg%00.md'
+  void it('should raise error for disallowed file type hidden behind a Poison Null Byte', () => {
+    for (const file of ['eastere.gg%00.md', 'package.json.bak%00.md', 'coupons_2013.md.bak%00.md', 'suspicious_errors.yml%00.pdf', 'encrypt.pyc%00.md']) {
+      res = { sendFile: mock.fn(), status: mock.fn() }
+      next = mock.fn()
+      req.params.file = file
 
-    servePublicFiles()(req, res, next)
+      servePublicFiles()(req, res, next)
 
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]eastere\.gg/)
-    assert.equal(challenges.easterEggLevelOneChallenge.solved, true)
+      assert.equal(res.sendFile.mock.calls.length, 0, `${file} must not be served`)
+      assert.equal(res.status.mock.calls[0].arguments[0], 403)
+      assert.equal(next.mock.calls.length, 1)
+      assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    }
   })
 
-  void it('should solve "forgottenDevBackupChallenge" when requesting package.json.bak with Poison Null Byte attack', () => {
-    challenges.forgottenDevBackupChallenge = { solved: false, save } as unknown as Challenge
-    req.params.file = 'package.json.bak%00.md'
+  void it('should still serve an allowlisted file when a Poison Null Byte leaves a valid file type', () => {
+    req.params.file = 'acquisitions.md%00.pdf'
 
     servePublicFiles()(req, res, next)
 
     assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]package\.json\.bak/)
-    assert.equal(challenges.forgottenDevBackupChallenge.solved, true)
-  })
-
-  void it('should solve "forgottenBackupChallenge" when requesting coupons_2013.md.bak with Poison Null Byte attack', () => {
-    challenges.forgottenBackupChallenge = { solved: false, save } as unknown as Challenge
-    req.params.file = 'coupons_2013.md.bak%00.md'
-
-    servePublicFiles()(req, res, next)
-
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]coupons_2013\.md\.bak/)
-    assert.equal(challenges.forgottenBackupChallenge.solved, true)
-  })
-
-  void it('should solve "misplacedSignatureFileChallenge" when requesting suspicious_errors.yml with Poison Null Byte attack', () => {
-    challenges.misplacedSignatureFileChallenge = { solved: false, save } as unknown as Challenge
-    req.params.file = 'suspicious_errors.yml%00.md'
-
-    servePublicFiles()(req, res, next)
-
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]suspicious_errors\.yml/)
-    assert.equal(challenges.misplacedSignatureFileChallenge.solved, true)
+    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]acquisitions\.md$/)
   })
 })
