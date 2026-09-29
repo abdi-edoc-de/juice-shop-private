@@ -96,16 +96,57 @@ void describe('/api/Products/:id', () => {
     assert.equal(res.body.message, 'Not Found')
   })
 
-  void it('PUT update existing product is possible due to Missing Function-Level Access Control vulnerability', async () => {
+  void it('PUT update existing product is forbidden for anonymous users', async () => {
     const res = await request(app)
       .put('/api/Products/' + tamperingProductId)
       .set(jsonHeader)
       .send({
         description: '<a href="http://kimminich.de" target="_blank">More...</a>'
       })
+    assert.equal(res.status, 401)
+  })
+
+  void it('PUT update existing product is possible when authenticated', async () => {
+    const res = await request(app)
+      .put('/api/Products/' + tamperingProductId)
+      .set(authHeader)
+      .send({
+        description: '<a href="http://kimminich.de" target="_blank">More...</a>'
+      })
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     assert.equal(res.body.data.description, '<a href="http://kimminich.de" target="_blank">More...</a>')
+  })
+
+  void it('GET product by id returns stored text verbatim without rendering it as a template', async () => {
+    const templateText = 'TPL{{constructor.name}}|{{^x}}INV{{/x}}|{{!hid}}END'
+    const putRes = await request(app)
+      .put('/api/Products/' + tamperingProductId)
+      .set(authHeader)
+      .send({ description: templateText })
+    assert.equal(putRes.status, 200)
+
+    const res = await request(app)
+      .get('/api/Products/' + tamperingProductId)
+    assert.equal(res.status, 200)
+    assert.equal(res.body.data.description, templateText)
+  })
+
+  void it('GET all products stays available when a product contains a malformed template', async () => {
+    const putRes = await request(app)
+      .put('/api/Products/' + tamperingProductId)
+      .set(authHeader)
+      .send({ description: 'ERRTEST{{#unclosed}}' })
+    assert.equal(putRes.status, 200)
+
+    const res = await request(app)
+      .get('/api/Products')
+    assert.equal(res.status, 200)
+
+    await request(app)
+      .put('/api/Products/' + tamperingProductId)
+      .set(authHeader)
+      .send({ description: 'plainbaseline' })
   })
 
   void it('DELETE existing product is forbidden via public API', async () => {

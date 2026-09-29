@@ -17,6 +17,7 @@ import { ProductModel } from '../models/product'
 import { BasketModel } from '../models/basket'
 import { WalletModel } from '../models/wallet'
 import * as security from '../lib/insecurity'
+import { translateWithoutTemplating } from '../lib/safeTranslate'
 import * as utils from '../lib/utils'
 import * as db from '../data/mongodb'
 
@@ -95,13 +96,13 @@ export function placeOrder () {
               const product = {
                 quantity: BasketItem.quantity,
                 id,
-                name: req.__(name),
+                name: translateWithoutTemplating(req, name),
                 price: itemPrice,
                 total: itemTotal,
                 bonus: itemBonus
               }
               basketProducts.push(product)
-              doc.text(`${BasketItem.quantity}x ${req.__(name)} ${req.__('ea.')} ${itemPrice} = ${itemTotal}¤`)
+              doc.text(`${BasketItem.quantity}x ${translateWithoutTemplating(req, name)} ${req.__('ea.')} ${itemPrice} = ${itemTotal}¤`)
               doc.moveDown()
               totalPrice += itemTotal
               totalPoints += itemBonus

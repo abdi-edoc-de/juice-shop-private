@@ -54,6 +54,7 @@ import logger from './lib/logger'
 import * as utils from './lib/utils'
 import * as antiCheat from './lib/antiCheat'
 import * as security from './lib/insecurity'
+import { translateWithoutTemplating } from './lib/safeTranslate'
 import validateConfig from './lib/startup/validateConfig'
 import cleanupFtpFolder from './lib/startup/cleanupFtpFolder'
 import customizeEasterEgg from './lib/startup/customizeEasterEgg' // vuln-code-snippet hide-line
@@ -386,7 +387,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     .delete(security.denyAll())
   /* Products: Only GET is allowed in order to view products */ // vuln-code-snippet neutral-line changeProductChallenge
   app.post('/api/Products', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
-  // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
+  app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
   app.delete('/api/Products/:id', security.denyAll())
   /* Challenges: GET list of challenges allowed. Everything else forbidden entirely */
   app.post('/api/Challenges', security.denyAll())
@@ -586,17 +587,19 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     }
 
     // translate product names and descriptions on-the-fly
+    // NB: Product texts are writable via the API, so they must never be passed
+    // to req.__() which would compile them as Mustache templates (SSTI).
     if (name === 'Product') {
       resource.list.fetch.after((req: Request, res: Response, context: { instance: any[], continue: any }) => {
         for (let i = 0; i < context.instance.length; i++) {
-          context.instance[i].name = req.__(context.instance[i].name)
-          context.instance[i].description = req.__(context.instance[i].description)
+          context.instance[i].name = translateWithoutTemplating(req, context.instance[i].name)
+          context.instance[i].description = translateWithoutTemplating(req, context.instance[i].description)
         }
         return context.continue
       })
       resource.read.send.before((req: Request, res: Response, context: { instance: { name: string, description: string }, continue: any }) => {
-        context.instance.name = req.__(context.instance.name)
-        context.instance.description = req.__(context.instance.description)
+        context.instance.name = translateWithoutTemplating(req, context.instance.name)
+        context.instance.description = translateWithoutTemplating(req, context.instance.description)
         return context.continue
       })
     }
