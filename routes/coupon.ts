@@ -8,16 +8,28 @@ import { BasketModel } from '../models/basket'
 import * as security from '../lib/insecurity'
 
 export function applyCoupon () {
-  return async ({ params }: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const id = params.id
-      let coupon: string | undefined | null = params.coupon ? decodeURIComponent(params.coupon) : undefined
+      const id = req.params.id
+      let coupon: string | undefined | null = req.params.coupon ? decodeURIComponent(req.params.coupon) : undefined
       const discount = security.discountFromCoupon(coupon)
       coupon = discount ? coupon : null
+
+      const user = security.authenticatedUsers.from(req)
+      if (!user) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
 
       const basket = await BasketModel.findByPk(id)
       if (!basket) {
         next(new Error(`Basket with id=${id} does not exist.`))
+        return
+      }
+
+      // Object-level authorization: a coupon may only be applied to the basket of the requesting user
+      if (Number(basket.UserId) !== Number(user.data.id)) {
+        res.status(401).json({ error: 'Invalid BasketId' })
         return
       }
 
