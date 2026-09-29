@@ -48,6 +48,22 @@ void describe('/api/BasketItems', () => {
     assert.equal(res.status, 200)
   })
 
+  void it('GET all basket items only returns items from baskets of the authenticated user', async () => {
+    const createRes = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send({ BasketId: 2, ProductId: 2, quantity: 1 })
+    assert.equal(createRes.status, 200)
+
+    const res = await request(app).get('/api/BasketItems').set(authHeader)
+    assert.equal(res.status, 200)
+    assert.ok(Array.isArray(res.body))
+    assert.ok(res.body.length > 0)
+    for (const basketItem of res.body) {
+      assert.equal(basketItem.BasketId, 2)
+    }
+  })
+
   void it('POST new basket item', async () => {
     const res = await request(app)
       .post('/api/BasketItems')
@@ -108,6 +124,16 @@ void describe('/api/BasketItems/:id', () => {
   void it('DELETE basket item is forbidden via public API', async () => {
     const res = await request(app).delete('/api/BasketItems/1')
     assert.equal(res.status, 401)
+  })
+
+  void it('GET basket item of another user is not found', async () => {
+    const res = await request(app).get('/api/BasketItems/1').set(authHeader)
+    assert.equal(res.status, 404)
+  })
+
+  void it('GET non-existing basket item is not found', async () => {
+    const res = await request(app).get('/api/BasketItems/999999').set(authHeader)
+    assert.equal(res.status, 404)
   })
 
   void it('GET newly created basket item by id', async () => {

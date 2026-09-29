@@ -4,7 +4,9 @@
  */
 
 import { type Request, type Response, type NextFunction } from 'express'
+import { Op } from 'sequelize'
 import { BasketItemModel } from '../models/basketitem'
+import { BasketModel } from '../models/basket'
 import { QuantityModel } from '../models/quantity'
 import * as challengeUtils from '../lib/challengeUtils'
 
@@ -97,5 +99,56 @@ async function quantityCheck (req: Request, res: Response, next: NextFunction, i
     }
   } else {
     res.status(400).json({ error: res.__('You can order only up to {{quantity}} items of this product.', { quantity: product.limitPerUser.toString() }) })
+  }
+}
+
+/* Resolves the basket ids owned by the currently authenticated user. */
+async function ownedBasketIds (req: Request) {
+  const userId = security.authenticatedUsers.from(req)?.data?.id
+  if (!userId) {
+    return []
+  }
+  const baskets = await BasketModel.findAll({ where: { UserId: userId }, attributes: ['id'] })
+  return baskets.map((basket) => basket.id)
+}
+
+/* Only returns the basket items belonging to a basket of the authenticated user instead of the whole table. */
+export function getBasketItems () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const basketIds = await ownedBasketIds(req)
+      if (basketIds.length === 0) {
+        res.json([])
+        return
+      }
+      const basketItems = await BasketItemModel.findAll({ where: { BasketId: { [Op.in]: basketIds } } })
+      res.json(basketItems)
+    } catch (error) {
+      next(error)
+    }
+  }
+}
+
+/* Only returns a basket item if it belongs to a basket of the authenticated user, otherwise it is indistinguishable from a non-existing one. */
+export function getBasketItemById () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id)
+      if (!Number.isInteger(id)) {
+        res.status(404).json({ message: 'Not Found', errors: [] })
+        return
+      }
+      const basketIds = await ownedBasketIds(req)
+      const basketItem = basketIds.length > 0
+        ? await BasketItemModel.findOne({ where: { id, BasketId: { [Op.in]: basketIds } } })
+        : null
+      if (basketItem == null) {
+        res.status(404).json({ message: 'Not Found', errors: [] })
+        return
+      }
+      res.json({ status: 'success', data: basketItem })
+    } catch (error) {
+      next(error)
+    }
   }
 }

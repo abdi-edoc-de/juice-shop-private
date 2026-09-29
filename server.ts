@@ -441,6 +441,9 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/api/Users', verify.emptyUserRegistration())
   /* Unauthorized users are not allowed to access B2B API */
   app.use('/b2b/v2', security.isAuthorized())
+  /* BasketItems: Reads are restricted to the baskets owned by the authenticated user */
+  app.get('/api/BasketItems', utils.asyncHandler(basketItems.getBasketItems()))
+  app.get('/api/BasketItems/:id', utils.asyncHandler(basketItems.getBasketItemById()))
   /* Check if the quantity is available in stock and limit per user not exceeded, then add item to basket */
   app.put('/api/BasketItems/:id', security.appendUserId(), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemUpdate()))
   app.post('/api/BasketItems', security.appendUserId(), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemAddition()), utils.asyncHandler(basketItems.addBasketItem()))
