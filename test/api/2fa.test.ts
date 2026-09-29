@@ -32,22 +32,26 @@ before(async () => {
   app = result.app
 }, { timeout: 60000 })
 
+function unsignedToken (payload: object) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  return `${header}.${body}.`
+}
+
+function postVerify (tmpToken: string, totpToken: string) {
+  return request(app)
+    .post('/rest/2fa/verify')
+    .set(jsonHeader)
+    .send({ tmpToken, totpToken })
+}
+
 void describe('/rest/2fa/verify', () => {
   void it('POST should return a valid authentication when a valid tmp token is passed', async () => {
-    const tmpTokenWurstbrot = security.authorize({
-      userId: 10,
-      type: 'password_valid_needs_second_factor_token'
-    })
+    const tmpTokenWurstbrot = security.issueSecondFactorToken(10)
 
     const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
 
-    const res = await request(app)
-      .post('/rest/2fa/verify')
-      .set(jsonHeader)
-      .send({
-        tmpToken: tmpTokenWurstbrot,
-        totpToken
-      })
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
 
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
@@ -58,20 +62,11 @@ void describe('/rest/2fa/verify', () => {
   })
 
   void it('POST should fail if a invalid totp token is used', async () => {
-    const tmpTokenWurstbrot = security.authorize({
-      userId: 10,
-      type: 'password_valid_needs_second_factor_token'
-    })
+    const tmpTokenWurstbrot = security.issueSecondFactorToken(10)
 
     const totpToken = generateSync({ secret: 'BI6KJAURX3LL5VQI2ZBFVLUWSBYBDX4H' })
 
-    const res = await request(app)
-      .post('/rest/2fa/verify')
-      .set(jsonHeader)
-      .send({
-        tmpToken: tmpTokenWurstbrot,
-        totpToken
-      })
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
 
     assert.equal(res.status, 401)
   })
@@ -84,15 +79,47 @@ void describe('/rest/2fa/verify', () => {
 
     const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
 
-    const res = await request(app)
-      .post('/rest/2fa/verify')
-      .set(jsonHeader)
-      .send({
-        tmpToken: tmpTokenWurstbrot,
-        totpToken
-      })
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
 
     assert.equal(res.status, 401)
+  })
+
+  void it('POST should fail for a forged tmp token without a signature', async () => {
+    const tmpTokenWurstbrot = unsignedToken({
+      userId: 10,
+      type: 'password_valid_needs_second_factor_token',
+      secondFactorId: 'forged'
+    })
+
+    const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
+
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
+
+    assert.equal(res.status, 401)
+  })
+
+  void it('POST should fail for a properly signed tmp token which no password check created', async () => {
+    const tmpTokenWurstbrot = security.authorize({
+      userId: 10,
+      type: 'password_valid_needs_second_factor_token',
+      secondFactorId: 'never-issued-by-the-server'
+    })
+
+    const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
+
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
+
+    assert.equal(res.status, 401)
+  })
+
+  void it('POST should not allow to use the same tmp token twice', async () => {
+    const tmpTokenWurstbrot = security.issueSecondFactorToken(10)
+
+    const firstRes = await postVerify(tmpTokenWurstbrot, generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' }))
+    assert.equal(firstRes.status, 200)
+
+    const secondRes = await postVerify(tmpTokenWurstbrot, generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' }))
+    assert.equal(secondRes.status, 401)
   })
 
   void it('POST should fail if the token type is invalid', async () => {
@@ -103,32 +130,17 @@ void describe('/rest/2fa/verify', () => {
 
     const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
 
-    const res = await request(app)
-      .post('/rest/2fa/verify')
-      .set(jsonHeader)
-      .send({
-        tmpToken: tmpTokenWurstbrot,
-        totpToken
-      })
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
 
     assert.equal(res.status, 401)
   })
 
   void it('POST should fail if the user doesn\'t exist', async () => {
-    const tmpTokenWurstbrot = security.authorize({
-      userId: 999,
-      type: 'password_valid_needs_second_factor_token'
-    })
+    const tmpTokenWurstbrot = security.issueSecondFactorToken(999)
 
     const totpToken = generateSync({ secret: 'IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH' })
 
-    const res = await request(app)
-      .post('/rest/2fa/verify')
-      .set(jsonHeader)
-      .send({
-        tmpToken: tmpTokenWurstbrot,
-        totpToken
-      })
+    const res = await postVerify(tmpTokenWurstbrot, totpToken)
 
     assert.equal(res.status, 401)
   })

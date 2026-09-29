@@ -38,10 +38,8 @@ export function login () {
           res.status(401).json({
             status: 'totp_token_required',
             data: {
-              tmpToken: security.authorize({
-                userId: user.data.id,
-                type: 'password_valid_needs_second_factor_token'
-              })
+              // Records server-side that the password of this user was just verified
+              tmpToken: security.issueSecondFactorToken(user.data.id)
             }
           })
         } else if (user.data?.id) {

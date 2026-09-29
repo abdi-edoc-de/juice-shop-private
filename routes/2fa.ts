@@ -17,14 +17,18 @@ export async function verify (req: Request, res: Response) {
   const { tmpToken, totpToken } = req.body
 
   try {
-    const { userId, type } = security.verify(tmpToken) && security.decode(tmpToken)
-
-    if (type !== 'password_valid_needs_second_factor_token') {
-      throw new Error('Invalid token type')
+    // The identity is taken from the server-side state which was created when the
+    // password was actually validated - never from claims inside the tmpToken.
+    const pendingSecondFactor = security.pendingSecondFactorFor(tmpToken)
+    if (!pendingSecondFactor) {
+      throw new Error('Invalid, expired or already used second factor token')
     }
 
+    const { id: pendingId, userId } = pendingSecondFactor
+
     const user = await UserModel.findByPk(userId)
-    if (user == null) {
+    if (user == null || user.totpSecret === '') {
+      security.invalidateSecondFactor(pendingId)
       throw new Error('No such user found!')
     }
 
@@ -33,8 +37,10 @@ export async function verify (req: Request, res: Response) {
     const plainUser = utils.queryResultToJson(user)
 
     if (!isValid) {
+      security.registerFailedSecondFactorAttempt(pendingId)
       return res.status(401).send()
     }
+    security.invalidateSecondFactor(pendingId) // the pending second factor is single-use
     challengeUtils.solveIf(challenges.twoFactorAuthUnsafeSecretStorageChallenge, () => { return user.email === 'wurstbrot@' + config.get<string>('application.domain') })
 
     const [basket] = await BasketModel.findOrCreate({ where: { UserId: userId } })

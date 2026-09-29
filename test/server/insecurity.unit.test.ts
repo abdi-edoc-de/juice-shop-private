@@ -344,4 +344,72 @@ void describe('insecurity', () => {
       assert.equal(typeof security.denyAll(), 'function')
     })
   })
+
+  void describe('verify', () => {
+    const unsignedToken = (payload: object) => {
+      const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+      const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
+      return `${header}.${body}.`
+    }
+
+    void it('accepts a token signed by the application itself', () => {
+      assert.equal(security.verify(security.authorize({ some: 'claim' })), true)
+    })
+
+    void it('rejects missing or malformed tokens', () => {
+      assert.equal(security.verify(''), false)
+      assert.equal(security.verify('aaa.bbb.ccc'), false)
+    })
+
+    void it('rejects an unsigned token declaring "alg":"none"', () => {
+      assert.equal(security.verify(unsignedToken({ userId: 10 })), false)
+    })
+
+    void it('rejects a token whose payload was tampered with', () => {
+      const token = security.authorize({ userId: 1 })
+      const [header, , signature] = token.split('.')
+      const tamperedPayload = Buffer.from(JSON.stringify({ userId: 10 })).toString('base64url')
+      assert.equal(security.verify(`${header}.${tamperedPayload}.${signature}`), false)
+    })
+  })
+
+  void describe('second factor state', () => {
+    void it('resolves a tmpToken issued after a password check to the recorded user', () => {
+      const tmpToken = security.issueSecondFactorToken(10)
+      assert.equal(security.pendingSecondFactorFor(tmpToken)?.userId, 10)
+    })
+
+    void it('does not resolve a tmpToken which was never issued by the server', () => {
+      const forged = security.authorize({
+        userId: 10,
+        type: 'password_valid_needs_second_factor_token',
+        secondFactorId: 'forged'
+      })
+      assert.equal(security.pendingSecondFactorFor(forged), undefined)
+    })
+
+    void it('does not resolve a tmpToken of a different type', () => {
+      const wrongType = security.authorize({ userId: 10, type: 'totp_setup_secret', secondFactorId: 'forged' })
+      assert.equal(security.pendingSecondFactorFor(wrongType), undefined)
+    })
+
+    void it('does not resolve an invalidated tmpToken', () => {
+      const tmpToken = security.issueSecondFactorToken(10)
+      const pending = security.pendingSecondFactorFor(tmpToken)
+      assert.ok(pending)
+      security.invalidateSecondFactor(pending.id)
+      assert.equal(security.pendingSecondFactorFor(tmpToken), undefined)
+    })
+
+    void it('does not resolve a tmpToken after too many failed attempts', () => {
+      const tmpToken = security.issueSecondFactorToken(10)
+      const pending = security.pendingSecondFactorFor(tmpToken)
+      assert.ok(pending)
+      security.registerFailedSecondFactorAttempt(pending.id)
+      assert.ok(security.pendingSecondFactorFor(tmpToken))
+      security.registerFailedSecondFactorAttempt(pending.id)
+      security.registerFailedSecondFactorAttempt(pending.id)
+      assert.equal(security.pendingSecondFactorFor(tmpToken), undefined)
+    })
+  })
 })

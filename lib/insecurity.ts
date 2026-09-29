@@ -51,8 +51,37 @@ export const cutOffPoisonNullByte = (str: string) => {
 
 export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+/**
+ * The only signature algorithm tokens issued by this application are signed with.
+ * Verification must never derive the algorithm from the (attacker controlled) token
+ * header, otherwise unsigned (`"alg":"none"`) or symmetrically signed tokens would
+ * be accepted as genuine.
+ */
+const jwtSignatureAlgorithm = 'RS256'
+
+export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: jwtSignatureAlgorithm })
+
+export const verify = (token: string) => {
+  if (!token) {
+    return false
+  }
+  try {
+    const [encodedHeader, encodedPayload, encodedSignature] = token.split('.')
+    if (!encodedHeader || !encodedPayload || !encodedSignature) {
+      return false
+    }
+    const header = JSON.parse(Buffer.from(encodedHeader, 'base64url').toString('utf8'))
+    if (header?.alg !== jwtSignatureAlgorithm) { // explicit allowlist instead of the algorithm declared in the token
+      return false
+    }
+    return crypto.createVerify('RSA-SHA256')
+      .update(`${encodedHeader}.${encodedPayload}`)
+      .verify(publicKey, Buffer.from(encodedSignature, 'base64url'))
+  } catch {
+    return false
+  }
+}
+
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -194,4 +223,92 @@ export const updateAuthenticatedUsers = () => (req: Request, res: Response, next
     })
   }
   next()
+}
+
+/*
+ * Server-side state proving that the first factor (password) was successfully
+ * validated for a given user. The client only ever receives an opaque handle
+ * (inside the signed tmpToken); the identity to log in is always read back from
+ * this map and never from claims a caller could assert.
+ */
+const secondFactorValidityInMs = 5 * 60 * 1000
+const maxSecondFactorAttempts = 3
+
+interface PendingSecondFactor {
+  id: string
+  userId: number
+  expiresAt: number
+  attempts: number
+}
+
+const pendingSecondFactors = new Map<string, PendingSecondFactor>()
+
+const prunePendingSecondFactors = () => {
+  const now = Date.now()
+  for (const [id, pending] of pendingSecondFactors) {
+    if (pending.expiresAt <= now) {
+      pendingSecondFactors.delete(id)
+    }
+  }
+}
+
+/**
+ * Records that the password of the given user was just verified and returns the
+ * tmpToken the client has to present together with its TOTP code.
+ */
+export const issueSecondFactorToken = (userId: number) => {
+  prunePendingSecondFactors()
+  const id = crypto.randomBytes(32).toString('hex')
+  pendingSecondFactors.set(id, { id, userId, expiresAt: Date.now() + secondFactorValidityInMs, attempts: 0 })
+  return authorize({
+    userId,
+    type: 'password_valid_needs_second_factor_token',
+    secondFactorId: id
+  })
+}
+
+/**
+ * Resolves a tmpToken into the pending second factor state recorded by the server
+ * when the password was checked. Returns `undefined` for tokens which are not
+ * properly signed, not of the expected type, expired, already used or which do not
+ * match the recorded user.
+ */
+export const pendingSecondFactorFor = (tmpToken: string): PendingSecondFactor | undefined => {
+  prunePendingSecondFactors()
+  if (!verify(tmpToken)) {
+    return undefined
+  }
+  let payload = decode(tmpToken) as any
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload)
+    } catch {
+      return undefined
+    }
+  }
+  if (payload?.type !== 'password_valid_needs_second_factor_token' || typeof payload.secondFactorId !== 'string') {
+    return undefined
+  }
+  const pending = pendingSecondFactors.get(payload.secondFactorId)
+  if (!pending || pending.userId !== payload.userId) {
+    return undefined
+  }
+  return pending
+}
+
+/** Invalidates a pending second factor so that it can only ever be used once. */
+export const invalidateSecondFactor = (id: string) => {
+  pendingSecondFactors.delete(id)
+}
+
+/** Counts a failed TOTP attempt and invalidates the pending second factor once too many were made. */
+export const registerFailedSecondFactorAttempt = (id: string) => {
+  const pending = pendingSecondFactors.get(id)
+  if (!pending) {
+    return
+  }
+  pending.attempts++
+  if (pending.attempts >= maxSecondFactorAttempts) {
+    pendingSecondFactors.delete(id)
+  }
 }
