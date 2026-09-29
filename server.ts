@@ -496,6 +496,27 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Verifying DB related challenges can be postponed until the next request for challenges is coming via finale */
   app.use(verify.databaseRelatedChallenges())
 
+  /* Guard against Sequelize query-option injection into the generated API endpoints below.
+     Their query string is handed to the ORM, so bracket syntax such as
+     ?scope[include][association]=Baskets&scope[include][attributes][0]=password would smuggle a
+     complete query-options object into Sequelize, overriding the configured excludeAttributes
+     projection and traversing associations the endpoint does not expose. Only flat parameter
+     values are accepted and "scope" is restricted to scopes declared on the model itself. */
+  const isFlatQueryValue = (value: unknown) => typeof value === 'string' || (Array.isArray(value) && value.every((entry) => typeof entry === 'string'))
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    const resource = req.path.replace(/^\//, '').split('/')[0]
+    const model: any = seq.models[String(resource).replace(/s$/, '')]
+    const declaredScopes = Object.keys(model?.options?.scopes ?? {})
+    const requestedScopes: unknown[] = req.query.scope === undefined ? [] : (Array.isArray(req.query.scope) ? [...req.query.scope] : [req.query.scope])
+    const injectedOptions = Object.values(req.query).some((value) => !isFlatQueryValue(value))
+    const invalidScope = requestedScopes.some((scope) => typeof scope !== 'string' || !declaredScopes.includes(scope))
+    if (injectedOptions || invalidScope) {
+      res.status(400).json({ status: 'error', message: 'Unsupported query parameter' })
+      return
+    }
+    next()
+  })
+
   // vuln-code-snippet start registerAdminChallenge
   /* Generated API endpoints */
   finale.initialize({ app, sequelize: seq })
