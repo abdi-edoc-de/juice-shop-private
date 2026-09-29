@@ -69,7 +69,7 @@ export class DataExportComponent implements OnInit {
         this.error = null
         this.confirmation = data.confirmation
         this.userData = data.userData
-        window.open('', '_blank', 'width=500')?.document.write(this.userData)
+        this.showUserData(this.userData)
         this.lastSuccessfulTry = new Date()
         localStorage.setItem('lstdtxprt', JSON.stringify(this.lastSuccessfulTry))
         this.ngOnInit()
@@ -81,6 +81,32 @@ export class DataExportComponent implements OnInit {
         this.resetFormError()
       }
     })
+  }
+
+  /**
+   * Renders the exported user data into a new browser window as plain text.
+   *
+   * The export contains user-supplied content (e.g. product review messages) which must never be
+   * interpreted as markup: a window opened via window.open('') is an about:blank document that
+   * inherits this application's origin, so parsing the export as HTML (as document.write would do)
+   * would execute any embedded script with access to the victim's session. Therefore the payload is
+   * only ever attached as a text node.
+   */
+  private showUserData (userData: string) {
+    const exportWindow = window.open('', '_blank', 'width=500')
+    if (!exportWindow) {
+      return
+    }
+    const exportDocument = exportWindow.document
+    const container = exportDocument.body ?? exportDocument.documentElement
+    if (!container) {
+      return
+    }
+    const preformatted = exportDocument.createElement('pre')
+    preformatted.style.whiteSpace = 'pre-wrap'
+    preformatted.style.wordBreak = 'break-all'
+    preformatted.textContent = String(userData ?? '')
+    container.replaceChildren(preformatted)
   }
 
   resetForm () {
