@@ -385,6 +385,8 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     .get(security.isAuthorized())
     .put(security.denyAll())
     .delete(security.denyAll())
+  /* Never allow privileged or application-managed user attributes to be mass assigned */
+  app.use('/api/Users/:id', security.filterProtectedUserAttributes())
   /* Products: Only GET is allowed in order to view products */ // vuln-code-snippet neutral-line changeProductChallenge
   app.post('/api/Products', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
   // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
