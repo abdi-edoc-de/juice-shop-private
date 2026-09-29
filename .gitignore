@@ -71,3 +71,12 @@ config/*.yml
 # Misc
 .playwright-mcp/
 cypress/screenshots/
+
+# Vendored AWS Continuum run-pentest action ships a committed bundle; the
+# global dist/ ignore above would otherwise drop it, breaking the local action.
+# git can only re-include files under an ignored dir if the DIR is un-ignored
+# first, so negate the path prefix before the contents.
+!.github/actions/run-pentest/dist
+!.github/actions/run-pentest/dist/index.js
+!.github/actions/run-pentest/dist/index.js.map
+!.github/actions/run-pentest/dist/licenses.txt
