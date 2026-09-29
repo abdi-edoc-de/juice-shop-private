@@ -105,14 +105,19 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
         const isForbiddenFile: boolean = (filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys'))
         if (!isForbiddenFile) {
           res.render('dataErasureResult', {
-            ...req.body,
-            ...themeVars
+            ...themeVars,
+            layout: req.body.layout
           }, (error, html) => {
             if (!html || error) {
               next(new Error(error.message))
             } else {
               const sendlfrResponse: string = html.slice(0, 100) + '......'
-              res.send(sendlfrResponse)
+              // The layout path is client-controlled, so the rendered content must never
+              // be interpreted by the browser in the application's own origin. It is
+              // entity-encoded and served as inert plain text with a locked-down CSP.
+              res.type('text/plain')
+              res.set('Content-Security-Policy', "default-src 'none'; sandbox")
+              res.send(entities.encode(sendlfrResponse))
               challengeUtils.solveIf(challenges.lfrChallenge, () => { return true })
             }
           })
@@ -120,8 +125,9 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
           next(new Error('File access not allowed'))
         }
       } else {
+        // Render with a known set of values only: spreading the request body would let
+        // a client inject view engine options such as `layout` into the render call.
         res.render('dataErasureResult', {
-          ...req.body,
           ...themeVars
         })
       }
