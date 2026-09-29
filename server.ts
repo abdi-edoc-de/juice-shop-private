@@ -390,6 +390,14 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
   app.delete('/api/Products/:id', security.denyAll())
   /* Challenges: GET list of challenges allowed. Everything else forbidden entirely */
+  /* Defense in depth behind the deny guards below: a challenge description is rendered as HTML,
+     so scriptable markup is stripped from any incoming payload before it could be persisted. */
+  app.use(['/api/Challenges', '/api/Challenges/:id'], (req: Request, res: Response, next: NextFunction) => {
+    if (typeof req.body?.description === 'string') {
+      req.body.description = security.sanitizeRichText(req.body.description)
+    }
+    next()
+  })
   app.post('/api/Challenges', security.denyAll())
   app.use('/api/Challenges/:id', security.denyAll())
   /* Hints: GET and PUT hints allowed. Everything else forbidden */
@@ -539,21 +547,25 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
     // translate challenge descriptions on-the-fly
     if (name === 'Challenge') {
+      /* Challenge descriptions are rendered as HTML on the score board, so they are reduced to a
+         safe formatting subset before being handed out - this also neutralizes any scriptable
+         markup that might already be sitting in the database. Sanitization happens after the
+         translation so that the untranslated text remains usable as the i18n lookup key. */
       resource.list.fetch.after((req: Request, res: Response, context: { instance: string | any[], continue: any }) => {
         for (let i = 0; i < context.instance.length; i++) {
           let description = context.instance[i].description
           if (description?.includes('<em>(This challenge is <strong>')) {
             const warning = description.substring(description.indexOf(' <em>(This challenge is <strong>'))
             description = description.substring(0, description.indexOf(' <em>(This challenge is <strong>'))
-            context.instance[i].description = req.__(description) + req.__(warning)
+            context.instance[i].description = security.sanitizeRichText(req.__(description) + req.__(warning))
           } else {
-            context.instance[i].description = req.__(description)
+            context.instance[i].description = security.sanitizeRichText(req.__(description))
           }
         }
         return context.continue
       })
       resource.read.send.before((req: Request, res: Response, context: { instance: { description: string, hint: string }, continue: any }) => {
-        context.instance.description = req.__(context.instance.description)
+        context.instance.description = security.sanitizeRichText(req.__(context.instance.description))
         return context.continue
       })
     }

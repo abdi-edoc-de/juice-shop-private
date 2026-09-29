@@ -2,7 +2,6 @@ import { Component, NgZone, type OnDestroy, type OnInit, inject, ChangeDetection
 import { type Subscription, combineLatest, firstValueFrom } from 'rxjs'
 import { MatProgressSpinner } from '@angular/material/progress-spinner'
 import { ActivatedRoute, Router } from '@angular/router'
-import { DomSanitizer } from '@angular/platform-browser'
 import { TranslateModule } from '@ngx-translate/core'
 import { NgClass } from '@angular/common'
 
@@ -47,7 +46,6 @@ export class ScoreBoardComponent implements OnInit, OnDestroy {
   private readonly challengeService = inject(ChallengeService)
   private readonly hintService = inject(HintService)
   private readonly configurationService = inject(ConfigurationService)
-  private readonly sanitizer = inject(DomSanitizer)
   private readonly ngZone = inject(NgZone)
   private readonly io = inject(SocketIoService)
   private readonly router = inject(Router)
@@ -80,7 +78,11 @@ export class ScoreBoardComponent implements OnInit, OnDestroy {
           hintsAvailable: hints.filter((hint) => hint.ChallengeId === challenge.id).length,
           tagList: challenge.tags ? challenge.tags.split(',').map((tag) => tag.trim()) : [],
           originalDescription: challenge.description as string,
-          description: this.sanitizer.bypassSecurityTrustHtml(challenge.description as string)
+          /* Bound via [innerHtml] in the challenge card, so the value is deliberately left as a
+             plain string: Angular's built-in sanitizer then strips event handlers, <script> tags
+             and `javascript:` URLs. Never wrap this in bypassSecurityTrustHtml() - the value
+             originates from the server-side challenge data and is not trusted markup. */
+          description: challenge.description as string
         }
       })
 

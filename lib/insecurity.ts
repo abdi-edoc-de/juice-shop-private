@@ -7,7 +7,6 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { type Request, type Response, type NextFunction } from 'express'
 import { type UserModel } from '@juice-shop/models/user'
-import expressJwt from 'express-jwt'
 import jwt from 'jsonwebtoken'
 import jws from 'jws'
 import sanitizeHtmlLib from 'sanitize-html'
@@ -49,11 +48,64 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+/* The one and only algorithm this application ever issues tokens with. It is pinned on the
+   verification side as well, so that the `alg` header of an incoming token can never select
+   the verification algorithm (which would allow `alg: none` forgeries or HMAC/RSA key
+   confusion using the well-known public key as the shared secret). */
+export const jwtAlgorithm = 'RS256'
+
+export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: jwtAlgorithm })
 export const decode = (token: string) => { return jws.decode(token)?.payload }
+
+export const verify = (token?: string) => {
+  if (!token) {
+    return false
+  }
+  try {
+    const decoded = jws.decode(token)
+    /* Reject anything that does not explicitly claim the pinned algorithm - most importantly
+       unsigned (`alg: none`) tokens - before any signature check is attempted. */
+    if (!decoded || decoded.header?.alg !== jwtAlgorithm) {
+      return false
+    }
+    /* The algorithm is passed explicitly, so it is never taken from the token header. */
+    if (!jws.verify(token, jwtAlgorithm, publicKey)) {
+      return false
+    }
+    const payload = decoded.payload
+    if (payload === null || payload === undefined || typeof payload !== 'object') {
+      return false
+    }
+    const now = Math.floor(Date.now() / 1000)
+    if (typeof payload.exp === 'number' && now >= payload.exp) {
+      return false
+    }
+    if (typeof payload.nbf === 'number' && now < payload.nbf) {
+      return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+const unauthorized = (res: Response) => {
+  res.status(401).json({ status: 'error', message: 'Unauthorized' })
+}
+
+/* Requires a token that carries a valid RS256 signature of this application. */
+export const isAuthorized = () => (req: Request, res: Response, next: NextFunction) => {
+  if (!verify(utils.jwtFrom(req))) {
+    unauthorized(res)
+    return
+  }
+  next()
+}
+
+/* Unconditionally refuses access. No token - forged or genuine - can satisfy this guard. */
+export const denyAll = () => (_req: Request, res: Response) => {
+  unauthorized(res)
+}
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
 export const sanitizeLegacy = (input = '') => input.replace(/<(?:\w+)\W+?[\w]/gi, '')
@@ -65,6 +117,31 @@ export const sanitizeSecure = (html: string): string => {
   } else {
     return sanitizeSecure(sanitized)
   }
+}
+
+/* Allowlist for fields that are intentionally rendered as HTML. It keeps the formatting and
+   links used by the shipped texts but drops scriptable constructs such as event-handler
+   attributes, <script>/<img>/<svg> tags and `javascript:` URLs. */
+const richTextSanitizerOptions = {
+  allowedTags: [...sanitizeHtmlLib.defaults.allowedTags, 'h1', 'h2', 'span', 'small', 'sub', 'sup', 'strike', 'u'],
+  allowedAttributes: {
+    ...sanitizeHtmlLib.defaults.allowedAttributes,
+    a: ['href', 'name', 'target', 'rel', 'title']
+  },
+  allowedSchemes: ['http', 'https', 'ftp', 'mailto']
+}
+
+export const sanitizeRichText = (html: string): string => {
+  if (!html) {
+    return html
+  }
+  let sanitized = sanitizeHtmlLib(html, richTextSanitizerOptions)
+  let next = sanitizeHtmlLib(sanitized, richTextSanitizerOptions)
+  while (next !== sanitized) {
+    sanitized = next
+    next = sanitizeHtmlLib(sanitized, richTextSanitizerOptions)
+  }
+  return sanitized
 }
 
 export const authenticatedUsers: IAuthenticatedUsers = {
@@ -185,13 +262,12 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
-    jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
-      if (err === null && decoded?.data !== undefined) {
-        authenticatedUsers.put(token, decoded)
-        res.cookie('token', token)
-      }
-    })
+  if (token && authenticatedUsers.get(token) === undefined && verify(token)) {
+    const decoded = decode(token) as ResponseWithUser | undefined
+    if (decoded?.data !== undefined) {
+      authenticatedUsers.put(token, decoded)
+      res.cookie('token', token)
+    }
   }
   next()
 }
