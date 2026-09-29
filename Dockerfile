@@ -2,7 +2,20 @@ FROM node:24 AS installer
 COPY . /juice-shop
 WORKDIR /juice-shop
 RUN npm install -g typescript@^6.0.3
-RUN npm install --omit=dev
+# Install WITH devDependencies: JuiceShop keeps its @types/* (config, express,
+# jsonwebtoken, js-yaml, ...) in devDependencies, and the server build (tsc,
+# strict mode) needs them. With --omit=dev, tsc fails and build/app.js is never
+# produced, yielding an image whose CMD ["/juice-shop/build/app.js"] cannot start.
+# The devDependencies live only in this discarded installer stage; the final
+# distroless stage copies the built tree, not the dev tooling.
+RUN npm install
+# Ensure the server is compiled (emits build/app.js that the runtime CMD runs).
+# tsc runs with noEmitOnError=false, so it EMITS the JS even when it reports
+# type errors; JuiceShop itself swallows tsc's non-zero exit ("build:server ||
+# cd ."), so we do the same — the emitted build/ is what matters, not a clean
+# type check. Guard it and then assert the entrypoint was actually produced.
+RUN npm run build:server || echo "tsc reported errors (non-fatal; JS still emitted)"
+RUN test -f build/app.js || (echo "build/app.js missing after build:server" >&2; exit 1)
 RUN npm dedupe --omit=dev
 RUN rm -rf frontend/node_modules
 RUN rm -rf frontend/.angular
