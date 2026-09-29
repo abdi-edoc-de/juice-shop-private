@@ -30,7 +30,7 @@ import { IpFilter } from 'express-ipfilter'
 import securityTxt from 'express-security.txt'
 import { rateLimit } from 'express-rate-limit'
 import { getStream } from 'file-stream-rotator'
-import type { Request, Response, NextFunction } from 'express'
+import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express'
 
 import { sequelize, createSequelize, initModels, setSequelize } from './models'
 import { UserModel } from './models/user'
@@ -329,7 +329,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/file-upload', uploadToMemory.single('file'), ensureFileIsPassed, metrics.observeFileUploadMetricsMiddleware(), checkUploadSize, checkFileType, handleZipFileUpload, handleXmlUpload, handleYamlUpload)
   app.post('/profile/image/file', uploadToMemory.single('file'), ensureFileIsPassed, metrics.observeFileUploadMetricsMiddleware(), utils.asyncHandler(profileImageFileUpload()))
   app.post('/profile/image/url', uploadToMemory.single('file'), utils.asyncHandler(profileImageUrlUpload()))
-  app.post('/rest/memories', uploadToDisk.single('image'), ensureFileIsPassed, security.appendUserId(), metrics.observeFileUploadMetricsMiddleware(), utils.asyncHandler(addMemory()))
+  app.post('/rest/memories', uploadToDisk.single('image'), handleUploadToDiskError, ensureFileIsPassed, security.appendUserId(), metrics.observeFileUploadMetricsMiddleware(), utils.asyncHandler(addMemory()))
 
   app.use(bodyParser.text({ type: '*/*' }))
   app.use(function jsonParser (req: Request, res: Response, next: NextFunction) {
@@ -700,7 +700,26 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Error Handling */
   app.use(verify.errorHandlingChallenge())
-  app.use(errorhandler())
+  if (isVerboseErrorHandlingEnabled()) {
+    app.use(errorhandler())
+  } else {
+    app.use(((err: unknown, req: Request, res: Response, next: NextFunction) => {
+      logger.error(`Unhandled error while handling ${req.method} ${req.originalUrl}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`)
+      if (res.headersSent) {
+        next(err)
+        return
+      }
+      const status = res.statusCode >= 400 && res.statusCode < 600 ? res.statusCode : 500
+      res.status(status).json({ status: 'error', message: status < 500 ? 'Request could not be processed' : 'Internal Server Error' })
+    }) as ErrorRequestHandler)
+  }
+}
+
+/* The errorhandler middleware renders the exception message and the full server-side stack trace
+   into the response body, which discloses absolute deployment paths, source coordinates and the
+   installed dependency inventory. It is therefore only mounted for local development and tests. */
+function isVerboseErrorHandlingEnabled () {
+  return process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test'
 }
 
 // Function called first to ensure that all the i18n files are reloaded successfully before other linked operations.
@@ -718,11 +737,32 @@ const mimeTypeMap: any = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg'
 }
+const invalidMimeTypeError = () => {
+  const error: Error & { status?: number, code?: string } = new Error('Invalid mime type')
+  error.status = 415
+  error.code = 'INVALID_MIME_TYPE'
+  return error
+}
+
+/* Answers upload failures (e.g. a non-allowlisted part Content-Type) with a terse 4xx instead of
+   letting them bubble up into the global error handler. */
+const handleUploadToDiskError = (error: Error & { status?: number, code?: string }, req: Request, res: Response, next: NextFunction) => {
+  if (!error) {
+    next()
+    return
+  }
+  if (error.code === 'INVALID_MIME_TYPE') {
+    res.status(415).json({ status: 'error', message: 'Unsupported file type' })
+    return
+  }
+  res.status(typeof error.status === 'number' && error.status >= 400 && error.status < 500 ? error.status : 400).json({ status: 'error', message: 'Upload failed' })
+}
+
 const uploadToDisk = multer({
   storage: multer.diskStorage({
     destination: (req: Request, file: any, cb: any) => {
       const isValid = mimeTypeMap[file.mimetype]
-      let error: Error | null = new Error('Invalid mime type')
+      let error: (Error & { status?: number, code?: string }) | null = invalidMimeTypeError()
       if (isValid) {
         error = null
       }

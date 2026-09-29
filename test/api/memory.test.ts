@@ -57,7 +57,8 @@ void describe('/rest/memories', () => {
       .set('Authorization', 'Bearer ' + token)
       .attach('image', file, 'Valid Image')
       .field('caption', 'Valid Image')
-    assert.equal(res.status, 500)
+    assert.equal(res.status, 415)
+    assert.equal(res.body.message, 'Unsupported file type')
   })
 
   void it('POST new memory image file is not passed - 1', async () => {
@@ -107,7 +108,7 @@ void describe('/rest/memories', () => {
       .post('/rest/memories')
       .set('Content-Type', 'multipart/form-data; boundary=----WebKitFormBoundaryoo6vortfDzBsDiro')
       .send('------WebKitFormBoundaryoo6vortfDzBsDiro\r\n Content-Disposition: form-data; name="bildbeschreibung"\r\n\r\n\r\n------WebKitFormBoundaryoo6vortfDzBsDiro--')
-    assert.equal(res.status, 500)
-    assert.ok(res.text.includes('Error: Malformed part header'))
+    assert.equal(res.status, 400)
+    assert.ok(!res.text.includes('Malformed part header'))
   })
 })
