@@ -1,5 +1,5 @@
 describe('/#/privacy-security/data-export', () => {
-  describe('challenge "dataExportChallenge"', () => {
+  describe('order data isolation', () => {
     beforeEach(() => {
       cy.visit('/#/register')
 
@@ -20,13 +20,23 @@ describe('/#/privacy-security/data-export', () => {
       cy.get('#registerButton').click()
     })
 
-    it('should be possible to steal admin user data by causing email clash during export', () => {
+    it('should not expose orders of a user whose email only differs in its vowels', () => {
+      // 'admun@...' used to collide with 'admin@...' because orders were
+      // resolved by a vowel-masked email instead of the UserId.
       cy.login({ email: 'admun', password: 'admun123' })
 
-      cy.visit('/#/privacy-security/data-export')
-      cy.get('#formatControl').contains('JSON').click()
-      cy.get('#submitButton').click()
-      cy.expectChallengeSolved({ challenge: 'GDPR Data Theft' })
+      cy.window().then((window) => {
+        cy.request({
+          method: 'GET',
+          url: '/rest/order-history',
+          headers: {
+            Authorization: `Bearer ${window.localStorage.getItem('token')}`
+          }
+        }).then((response) => {
+          expect(response.status).to.equal(200)
+          expect(response.body.data).to.deep.equal([])
+        })
+      })
     })
   })
 })

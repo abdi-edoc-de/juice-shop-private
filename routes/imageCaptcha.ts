@@ -21,14 +21,15 @@ export function imageCaptchas () {
         return
       }
 
-      const imageCaptcha = {
+      const imageCaptchaInstance = ImageCaptchaModel.build({
         image: captcha.data,
         answer: captcha.text,
         UserId: user.data.id
-      }
-      const imageCaptchaInstance = ImageCaptchaModel.build(imageCaptcha)
+      })
       await imageCaptchaInstance.save()
-      res.json(imageCaptcha)
+      // Never return the solution to the client: it would make the CAPTCHA
+      // trivially solvable by an automated client replaying the answer.
+      res.json({ image: captcha.data })
     } catch (error) {
       res.status(400).send(res.__('Unable to create CAPTCHA. Please try again.'))
     }
@@ -38,7 +39,11 @@ export function imageCaptchas () {
 export const verifyImageCaptcha = () => async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = security.authenticatedUsers.from(req)
-    const UserId = user ? user.data ? user.data.id : undefined : undefined
+    const UserId = user?.data?.id
+    if (!UserId) {
+      res.status(401).send(res.__('Wrong answer to CAPTCHA. Please try again.'))
+      return
+    }
     const captchas = await ImageCaptchaModel.findAll({
       limit: 1,
       where: {
@@ -47,9 +52,19 @@ export const verifyImageCaptcha = () => async (req: Request, res: Response, next
           [Op.gt]: new Date(Date.now() - 300000)
         }
       },
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC'], ['id', 'DESC']]
     })
-    if (!captchas[0] || req.body.answer === captchas[0].answer) {
+    const captcha = captchas[0]
+    // A missing (or expired) CAPTCHA must fail closed, otherwise the gate can be
+    // skipped entirely by simply never requesting a CAPTCHA.
+    if (!captcha) {
+      res.status(401).send(res.__('Wrong answer to CAPTCHA. Please try again.'))
+      return
+    }
+    // Each CAPTCHA is single-use, so a known answer cannot be replayed and a
+    // single challenge cannot be brute-forced.
+    await captcha.destroy()
+    if (typeof req.body?.answer === 'string' && req.body.answer === captcha.answer) {
       next()
     } else {
       res.status(401).send(res.__('Wrong answer to CAPTCHA. Please try again.'))

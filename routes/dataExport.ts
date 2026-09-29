@@ -19,27 +19,30 @@ export function dataExport () {
       if (loggedInUser?.data?.email && loggedInUser.data.id) {
         const username = loggedInUser.data.username
         const email = loggedInUser.data.email
-        const updatedEmail = email.replace(/[aeiou]/gi, '*')
+        const userId = loggedInUser.data.id
 
         let memories, orders, reviews
         try {
-          memories = await MemoryModel.findAll({ where: { UserId: req.body.UserId } })
+          memories = await MemoryModel.findAll({ where: { UserId: userId } })
         } catch (error) {
           next(error)
           return
         }
 
         try {
-          orders = await db.ordersCollection.find({ email: updatedEmail })
+          // Orders MUST be resolved by the immutable UserId of the authenticated
+          // session. Any key derived from the e-mail address (especially a lossy
+          // one) is not unique per user and would allow cross-customer reads.
+          orders = await db.ordersCollection.find({ UserId: userId })
         } catch (error) {
-          next(new Error(`Error retrieving orders for ${updatedEmail}`))
+          next(new Error(`Error retrieving orders for user with id ${userId}`))
           return
         }
 
         try {
           reviews = await db.reviewsCollection.find({ author: email })
         } catch (error) {
-          next(new Error(`Error retrieving reviews for ${updatedEmail}`))
+          next(new Error(`Error retrieving reviews for user with id ${userId}`))
           return
         }
 
