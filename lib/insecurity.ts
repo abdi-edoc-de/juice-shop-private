@@ -162,6 +162,40 @@ export const isAccounting = () => {
   }
 }
 
+export const decodedTokenFrom = (req: Request) => {
+  const token = utils.jwtFrom(req)
+  return (token && verify(token)) ? decode(token) : undefined
+}
+
+export const isAdmin = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (decodedTokenFrom(req)?.data?.role === roles.admin) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
+/* Object-level authorization: a principal may only read its own user record,
+   unless it holds the admin role. */
+export const isSelfOrAdmin = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = decodedTokenFrom(req)
+    if (decodedToken?.data?.role === roles.admin) {
+      next()
+      return
+    }
+    const ownId = decodedToken?.data?.id
+    const requestedId = Number.parseInt(req.params.id, 10)
+    if (ownId !== undefined && Number.isInteger(requestedId) && Number(ownId) === requestedId) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
 export const isDeluxe = (req: Request) => {
   const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
   return decodedToken?.data?.role === roles.deluxe && decodedToken?.data?.deluxeToken && decodedToken?.data?.deluxeToken === deluxeToken(decodedToken?.data?.email)
