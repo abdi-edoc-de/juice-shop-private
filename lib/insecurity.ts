@@ -49,10 +49,59 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+/* All tokens issued by this application are signed with this single asymmetric algorithm. */
+export const jwtAlgorithm = 'RS256'
+
+class UnauthorizedError extends Error {
+  status = 401
+  inner: { message: string }
+
+  constructor (message: string) {
+    super(message)
+    this.name = 'UnauthorizedError'
+    this.inner = { message }
+  }
+}
+
+/* The token verification libraries in use derive the algorithm from the token's own header,
+   which would let an unsigned ("alg":"none") token satisfy any configured key. Tokens are
+   therefore pinned to the expected algorithm before any signature check is attempted. */
+const hasExpectedAlgorithm = (token: string) => {
+  try {
+    return jws.decode(token)?.header?.alg === jwtAlgorithm
+  } catch {
+    return false
+  }
+}
+
+export const isAuthorized = () => {
+  const verifyToken = expressJwt(({ secret: publicKey }) as any)
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token && !hasExpectedAlgorithm(token)) {
+      next(new UnauthorizedError(`Invalid token: only ${jwtAlgorithm} signed tokens are accepted`))
+      return
+    }
+    verifyToken(req, res, next)
+  }
+}
+
+/* Denies every caller unconditionally - no token, however crafted, can satisfy this guard. */
+export const denyAll = () => (req: Request, res: Response, next: NextFunction) => {
+  next(new UnauthorizedError('Access to this resource is denied'))
+}
+
+export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: jwtAlgorithm })
+export const verify = (token: string) => {
+  if (!token || !hasExpectedAlgorithm(token)) {
+    return false
+  }
+  try {
+    return jws.verify(token, jwtAlgorithm, publicKey)
+  } catch {
+    return false
+  }
+}
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -185,7 +234,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && hasExpectedAlgorithm(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
