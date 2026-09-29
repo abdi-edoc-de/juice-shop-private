@@ -36,6 +36,46 @@ let fileUploadErrorsMetric = new Prometheus.Counter({
   labelNames: ['file_type']
 })
 
+/*
+ * The `file_type` label used to be filled with the raw, client-supplied `Content-Type` of the
+ * uploaded multipart part. Since every distinct value creates a new and permanent time series in
+ * the process-wide Prometheus registry, anonymous callers could grow both the registry and the
+ * publicly served /metrics payload without any bound (CWE-770, metric cardinality injection).
+ * The label is therefore normalised against a fixed allowlist of MIME types the application
+ * actually deals with, and anything else is folded into a single OTHER_FILE_TYPE bucket, which
+ * caps the cardinality of the metric at a constant, known number of series.
+ */
+const OTHER_FILE_TYPE = 'other'
+
+const ALLOWED_FILE_TYPES = new Set([
+  'application/json',
+  'application/pdf',
+  'application/x-yaml',
+  'application/xml',
+  'application/yaml',
+  'application/zip',
+  'application/x-zip-compressed',
+  'image/bmp',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/svg+xml',
+  'image/tiff',
+  'image/webp',
+  'text/plain',
+  'text/xml',
+  'text/yaml'
+])
+
+export function sanitizeFileTypeLabel (mimetype?: string): string {
+  if (typeof mimetype !== 'string') {
+    return OTHER_FILE_TYPE
+  }
+  // Drop any parameters (e.g. "; charset=utf-8") and normalise casing/whitespace before matching.
+  const normalized = mimetype.split(';')[0].trim().toLowerCase()
+  return ALLOWED_FILE_TYPES.has(normalized) ? normalized : OTHER_FILE_TYPE
+}
+
 let httpRequestsMetric = new Prometheus.Counter({
   name: 'http_requests_count',
   help: 'Total HTTP request count grouped by status code.',
@@ -74,7 +114,8 @@ export function observeFileUploadMetricsMiddleware () {
   return ({ file }: Request, res: Response, next: NextFunction) => {
     onFinished(res, () => {
       if (file != null) {
-        res.statusCode < 400 ? fileUploadsCountMetric.labels(file.mimetype).inc() : fileUploadErrorsMetric.labels(file.mimetype).inc()
+        const fileType = sanitizeFileTypeLabel(file.mimetype)
+        res.statusCode < 400 ? fileUploadsCountMetric.labels(fileType).inc() : fileUploadErrorsMetric.labels(fileType).inc()
       }
     })
     next()
