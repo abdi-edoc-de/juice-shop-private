@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { type Request, type Response } from 'express'
+import { type Request, type Response, type NextFunction } from 'express'
 import { AddressModel } from '../models/address'
 
 export function getAddress () {
@@ -32,5 +32,18 @@ export function delAddressById () {
     } else {
       res.status(400).json({ status: 'error', data: 'Malicious activity detected.' })
     }
+  }
+}
+
+/* Ownership predicate for the generated update endpoint: the addressed row has
+   to belong to the authenticated caller before finale applies the request body. */
+export function verifyAddressOwnership () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const address = await AddressModel.findOne({ where: { id: req.params.id, UserId: req.body.UserId } })
+    if (address == null) {
+      res.status(403).json({ status: 'error', data: 'Malicious activity detected.' })
+      return
+    }
+    next()
   }
 }

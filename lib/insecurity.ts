@@ -49,10 +49,70 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
-export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
+/* Only tokens signed with the application's own RSA key pair are acceptable.
+   The verification algorithm must never be derived from the token's own header,
+   otherwise a caller can downgrade it - e.g. to "none" or to a symmetric HMAC
+   variant - and mint a valid-looking token without any key material at all. */
+export const allowedJwtAlgorithms = ['RS256']
+
+export const hasAllowedJwtAlgorithm = (token?: string | null) => {
+  if (!token) {
+    return false
+  }
+  try {
+    const algorithm = jws.decode(token)?.header?.alg
+    return typeof algorithm === 'string' && allowedJwtAlgorithms.includes(algorithm)
+  } catch {
+    return false
+  }
+}
+
+const tokenFrom = (req: Request) => utils.jwtFrom(req) ?? req.cookies?.token
+
+const unauthorized = (res: Response) => {
+  res.status(401).json({ status: 'error', message: 'Unauthorized' })
+}
+
+/* Rejects any token whose header announces an algorithm outside of the
+   server-side allowlist before the token is handed to the JWT library. */
+const enforceJwtAlgorithm = (req: Request, res: Response, next: NextFunction) => {
+  const token = tokenFrom(req)
+  if (token && !hasAllowedJwtAlgorithm(token)) {
+    unauthorized(res)
+    return
+  }
+  next()
+}
+
+export const isAuthorized = () => {
+  const verifyToken = expressJwt(({ secret: publicKey, algorithms: allowedJwtAlgorithms }) as any)
+  return (req: Request, res: Response, next: NextFunction) => {
+    enforceJwtAlgorithm(req, res, () => { verifyToken(req, res, next) })
+  }
+}
+
+/* Routes covered by this overlay must not be reachable by any principal, so no
+   token is inspected at all. Implementing the overlay as a JWT check against an
+   unguessable secret used to make it bypassable through algorithm confusion. */
+export const denyAll = () => (req: Request, res: Response) => { unauthorized(res) }
+
+/* Attributes that are owned by the persistence layer and must never be set or
+   overwritten from a request body of the generated CRUD API. */
+export const immutableAttributes = ['id', 'createdAt', 'updatedAt', 'deletedAt']
+
+export const stripImmutableAttributes = () => (req: Request, res: Response, next: NextFunction) => {
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    for (const attribute of immutableAttributes) {
+      if (attribute in req.body) {
+        delete req.body[attribute]
+      }
+    }
+  }
+  next()
+}
+
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+export const verify = (token: string) => (token && hasAllowedJwtAlgorithm(token)) ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -185,7 +245,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && hasAllowedJwtAlgorithm(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
